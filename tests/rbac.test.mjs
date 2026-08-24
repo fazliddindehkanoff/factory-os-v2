@@ -48,6 +48,12 @@ test("administrator manages access without becoming a business approver", () => 
 
 test("operational duties remain separated", () => {
   assert.equal(hasPermission([role("requester")], "requests.create"), true)
+  assert.equal(hasPermission([role("requester")], "requests.view_own"), true)
+  assert.equal(hasPermission([role("requester")], "requests.view"), false)
+  assert.equal(hasPermission([role("requester")], "procurement.view"), false)
+  assert.equal(hasPermission([role("requester")], "suppliers.view"), false)
+  assert.equal(hasPermission([role("requester")], "settings.manage"), false)
+  assert.equal(hasPermission([role("requester")], "finance.view"), false)
   assert.equal(hasPermission([role("requester")], "approvals.approve"), false)
   assert.equal(hasPermission([role("warehouse")], "warehouse.issue"), true)
   assert.equal(hasPermission([role("warehouse")], "finance.mark_paid"), false)

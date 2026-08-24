@@ -2,16 +2,14 @@
 
 import {
   BadgeCheckIcon,
-  CheckIcon,
   ChevronsUpDownIcon,
   CreditCardIcon,
   LogOutIcon,
-  ShieldCheckIcon,
   SparklesIcon,
 } from "lucide-react"
 
+import { logoutAction } from "@/app/[lang]/login/actions"
 import { useAuthorization } from "@/components/auth/use-authorization"
-import { useSettings } from "@/components/settings/settings-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -20,9 +18,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -43,8 +38,7 @@ export function NavUser({
   messages: Messages
 }) {
   const { isMobile } = useSidebar()
-  const { currentUser, currentUserId, roles, setCurrentUserId } = useAuthorization()
-  const { data } = useSettings()
+  const { currentUser, roles } = useAuthorization()
   const user = {
     name: currentUser?.fullName ?? "Factory OS",
     email: currentUser?.username ?? "",
@@ -56,8 +50,6 @@ export function NavUser({
     .map((part) => part[0])
     .join("")
     .toLocaleUpperCase()
-  const previewLabel = lang === "ru" ? "Проверить доступ" : lang === "tr" ? "Erişimi önizle" : "Kirishni tekshirish"
-
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -101,37 +93,6 @@ export function NavUser({
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <ShieldCheckIcon />
-                {previewLabel}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="min-w-64">
-                <DropdownMenuGroup>
-                  <DropdownMenuLabel>{previewLabel}</DropdownMenuLabel>
-                  {data.users.map((candidate) => {
-                    const candidateRoles = data.roles
-                      .filter((role) => candidate.roleIds.includes(role.id))
-                      .map((role) => getLocalizedTitle(role, lang))
-                      .join(", ")
-                    return (
-                      <DropdownMenuItem
-                        key={candidate.id}
-                        onClick={() => setCurrentUserId(candidate.id)}
-                        className="items-start py-2"
-                      >
-                        <CheckIcon className={candidate.id === currentUserId ? "mt-0.5 opacity-100" : "mt-0.5 opacity-0"} />
-                        <span className="grid min-w-0 gap-0.5">
-                          <span className="truncate font-medium">{candidate.fullName}</span>
-                          <span className="truncate text-xs text-muted-foreground">{candidateRoles}</span>
-                        </span>
-                      </DropdownMenuItem>
-                    )
-                  })}
-                </DropdownMenuGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem>
                 <SparklesIcon />
@@ -150,10 +111,16 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <LogOutIcon />
-              {messages.logOut}
-            </DropdownMenuItem>
+            <form action={logoutAction}>
+              <input type="hidden" name="locale" value={lang} />
+              <DropdownMenuItem
+                nativeButton
+                render={<button type="submit" className="w-full" />}
+              >
+                <LogOutIcon />
+                {messages.logOut}
+              </DropdownMenuItem>
+            </form>
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

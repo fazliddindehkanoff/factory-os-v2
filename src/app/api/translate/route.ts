@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 
+import { userHasPermission } from "@/lib/auth/authorization"
+import { getSessionUser } from "@/lib/auth/session"
 import { isLocale, locales, type Locale } from "@/lib/i18n"
 
 type TranslateRequest = {
@@ -28,6 +30,14 @@ async function translate(text: string, source: Locale, target: Locale) {
 }
 
 export async function POST(request: Request) {
+  const session = await getSessionUser()
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!await userHasPermission(session.userId, "settings.manage")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  }
+
   const body = (await request.json()) as TranslateRequest
   const text = body.text?.trim()
   const sourceLocale = body.sourceLocale

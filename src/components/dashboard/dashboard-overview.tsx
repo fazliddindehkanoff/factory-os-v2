@@ -4,7 +4,9 @@ import Link from "next/link"
 import {
   ArrowRightIcon,
   CheckCircle2Icon,
+  CircleCheckBigIcon,
   ClipboardListIcon,
+  Clock3Icon,
   PlusIcon,
   Settings2Icon,
   TriangleAlertIcon,
@@ -18,7 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Locale, Messages } from "@/lib/i18n"
-import type { OrderStatus, UrgencyLevel } from "@/lib/orders"
+import { canUserViewRejectedOrder, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -27,25 +29,51 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
   const { data } = useSettings()
   const { can, canViewOrders, canViewSettingsSection, currentUser } = useAuthorization()
   const ownOnly = !can("requests.view") && can("requests.view_own")
+  const departmentScoped = currentUser?.roleIds.includes("role-dept_head") ?? false
+  const procurementSpecialistScoped = currentUser?.roleIds.includes("role-procurement_manager") ?? false
+  const visibleAfterRejection = (order: (typeof orders)[number]) => {
+    const supervisorUserId = data.users.find(
+      (user) =>
+        user.roleIds.includes("role-dept_head") &&
+        user.departmentIds.some((id) => order.departmentIds.includes(id)),
+    )?.id
+    return canUserViewRejectedOrder(order, currentUser?.id, supervisorUserId)
+  }
   const permittedOrders = canViewOrders
-    ? orders.filter((order) => !ownOnly || order.applicantId === currentUser?.id)
+    ? orders.filter((order) =>
+        (!ownOnly || order.createdByUserId === currentUser?.id) &&
+        (!departmentScoped || order.departmentIds.some((id) => currentUser?.departmentIds.includes(id))) &&
+        (!procurementSpecialistScoped || order.procurementSpecialistUserId === currentUser?.id) &&
+        visibleAfterRejection(order),
+      )
     : []
   const showOperationalSummary = can("reports.status_summary")
   const visibleOrders = showOperationalSummary
     ? permittedOrders
-    : permittedOrders.filter((order) => order.applicantId === currentUser?.id)
+    : permittedOrders.filter((order) => order.createdByUserId === currentUser?.id)
   const awaitingCount = visibleOrders.filter((order) => order.status === "warehouse_check").length
   const urgentCount = visibleOrders.filter((order) => order.urgency === "urgent" || order.urgency === "critical").length
   const approvedCount = visibleOrders.filter((order) => order.status === "approved").length
+  const successfullyClosedCount = visibleOrders.filter(isOrderSuccessfullyClosed).length
+  const waitingForMeCount = orders.filter((order) => {
+    const warehouseResponsibleUserId = data.warehouses.find(
+      (warehouse) => warehouse.id === order.warehouseId,
+    )?.responsibleUserId
+    return isOrderWaitingForUser(order, currentUser?.id, warehouseResponsibleUserId)
+  }).length
   const recentOrders = [...visibleOrders]
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 5)
 
   const metrics = [
-    { label: messages.totalOrders, value: visibleOrders.length, icon: ClipboardListIcon },
+    { label: waitingLabel(lang), value: waitingForMeCount, icon: Clock3Icon, href: `/${lang}/orders?view=waiting` },
+    ...(!procurementSpecialistScoped
+      ? [{ label: messages.totalOrders, value: visibleOrders.length, icon: ClipboardListIcon }]
+      : []),
     { label: messages.awaitingWarehouse, value: awaitingCount, icon: WarehouseIcon },
     { label: messages.urgentOrders, value: urgentCount, icon: TriangleAlertIcon },
     { label: messages.approvedOrders, value: approvedCount, icon: CheckCircle2Icon },
+    { label: successfullyClosedLabel(lang), value: successfullyClosedCount, icon: CircleCheckBigIcon },
   ]
 
   const pipeline: Array<{ status: OrderStatus; count: number; color: string }> = [
@@ -76,22 +104,9 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
         </Link> : null}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={cn("grid gap-4 sm:grid-cols-2 lg:grid-cols-3", procurementSpecialistScoped ? "xl:grid-cols-5" : "xl:grid-cols-6")}>
         {metrics.map((metric) => (
-          <section key={metric.label} className="rounded-xl border bg-card p-5 shadow-xs">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">{metric.label}</p>
-                <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{metric.value}</p>
-              </div>
-              <span className="flex size-10 items-center justify-center rounded-lg bg-muted text-foreground">
-                <metric.icon className="size-5" aria-hidden="true" />
-              </span>
-            </div>
-            <p className="mt-4 text-xs text-muted-foreground">
-              {visibleOrders.length ? Math.round((metric.value / visibleOrders.length) * 100) : 0}% {messages.ofAllOrders}
-            </p>
-          </section>
+          <MetricCard key={metric.label} metric={metric} total={visibleOrders.length} allLabel={messages.ofAllOrders} />
         ))}
       </div>
 
@@ -202,6 +217,36 @@ function SectionHeader({ title, description }: { title: string; description: str
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
     </div>
   )
+}
+
+function MetricCard({ metric, total, allLabel }: {
+  metric: { label: string; value: number; icon: typeof ClipboardListIcon; href?: string }
+  total: number
+  allLabel: string
+}) {
+  const content = <>
+    <div className="flex items-start justify-between gap-4">
+      <div><p className="text-sm text-muted-foreground">{metric.label}</p><p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{metric.value}</p></div>
+      <span className="flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary"><metric.icon className="size-5" aria-hidden="true" /></span>
+    </div>
+    <p className="mt-4 text-xs text-muted-foreground">{total ? Math.round((metric.value / total) * 100) : 0}% {allLabel}</p>
+  </>
+  const classes = "rounded-xl border bg-card p-5 shadow-xs transition-colors"
+  return metric.href
+    ? <Link href={metric.href} className={`${classes} cursor-pointer hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50`}>{content}</Link>
+    : <section className={classes}>{content}</section>
+}
+
+function waitingLabel(lang: Locale) {
+  return lang === "ru" ? "Ожидает меня" : lang === "tr" ? "Beni bekliyor" : "Meni kutmoqda"
+}
+
+function successfullyClosedLabel(lang: Locale) {
+  return lang === "ru"
+    ? "Успешно закрыты"
+    : lang === "tr"
+      ? "Başarıyla kapatıldı"
+      : "Muvaffaqiyatli yopilgan"
 }
 
 function QuickAction({ href, icon: Icon, label }: { href: string; icon: typeof PlusIcon; label: string }) {

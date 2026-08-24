@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { cookies } from "next/headers"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { DashboardHeaderActions } from "@/components/dashboard-header-actions"
@@ -17,8 +18,9 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import type { Locale, Messages } from "@/lib/i18n"
+import { requireSession } from "@/lib/auth/session"
 
-export function AppShell({
+export async function AppShell({
   lang,
   messages,
   parentLabel,
@@ -33,8 +35,12 @@ export function AppShell({
   currentLabel: string
   children: ReactNode
 }) {
+  await requireSession(lang)
+  const sidebarCookie = (await cookies()).get("sidebar_state")
+  const sidebarDefaultOpen = sidebarCookie?.value !== "false"
+
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={sidebarDefaultOpen}>
       <AppSidebar lang={lang} messages={messages} />
       <SidebarInset className="min-w-0 overflow-x-hidden">
         <header className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border bg-sidebar transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Factory OS — Оплаты</title>
+<style>
+  :root{
+    --bg:#09111f;--sidebar:#101b2d;--top:#111c2e;--panel:#162439;--panel2:#122034;
+    --row:#18283e;--row-alt:#15243a;--border:#2a3c55;--border2:#354963;
+    --text:#edf4ff;--muted:#8297b5;--muted2:#5f7390;--blue:#2f7df7;--blue2:#1e66dc;
+    --blue-soft:rgba(47,125,247,.13);--green:#25c58a;--green-soft:rgba(37,197,138,.12);
+    --amber:#f0a83b;--amber-soft:rgba(240,168,59,.12);--red:#ef6262;--red-soft:rgba(239,98,98,.12);
+    --violet:#9a7cff;--white:#fff;--shadow:0 24px 70px rgba(0,0,0,.38);
+    --radius:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial,sans-serif;font-size:13px}
+  button,input,select,textarea{font:inherit}
+  button{color:inherit}
+  .app{min-height:100vh;display:grid;grid-template-columns:226px minmax(0,1fr)}
+  .sidebar{position:fixed;left:0;top:0;bottom:0;width:226px;background:var(--sidebar);border-right:1px solid var(--border);padding:13px 13px 14px;z-index:20;display:flex;flex-direction:column}
+  .brand{height:46px;display:flex;align-items:center;gap:10px;padding:0 5px 12px;border-bottom:1px solid var(--border)}
+  .brandmark{width:30px;height:30px;border-radius:7px;background:#f5f7fb;color:#152238;display:grid;place-items:center;font-weight:900}
+  .brandname{font-weight:800;line-height:1.05;font-size:12px}.brandname b{color:var(--blue)}
+  .brandsub{font-size:8px;letter-spacing:1.3px;color:#70a0d8;margin-top:4px}
+  .nav-title{font-size:8px;letter-spacing:1.35px;color:#6f91b7;font-weight:800;margin:28px 9px 9px}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav-item{height:36px;padding:0 10px;border-radius:7px;display:flex;align-items:center;gap:10px;color:#b9c8dd;cursor:pointer;user-select:none}
+  .nav-item:hover{background:#16253a;color:#fff}.nav-item.active{background:#f1f4fa;color:#17243a;font-weight:700}
+  .nav-item.active .ico{color:#17243a}.nav-item .ico{width:15px;text-align:center;color:#9db2ca;font-size:14px}
+  .badge-count{margin-left:auto;min-width:17px;height:17px;padding:0 4px;border-radius:9px;border:1px solid #7b591b;background:#3b2b0c;color:#f4b34c;font-size:9px;display:grid;place-items:center}
+  .side-spacer{flex:1}.profile{border-top:1px solid var(--border);padding:16px 9px 10px;display:flex;gap:10px;align-items:center}.avatar{width:28px;height:28px;border-radius:6px;background:#1b2b42;border:1px solid var(--border);display:grid;place-items:center;font-weight:800}.pname{font-weight:800;font-size:10px}.phandle{font-size:9px;color:#7188a7;margin-top:2px}
+  .logout{height:34px;padding:0 9px;display:flex;align-items:center;gap:10px;color:#c4d1e2;cursor:pointer}
+
+  .workspace{grid-column:2;min-width:0}
+  .topbar{position:sticky;top:0;z-index:12;height:59px;background:var(--top);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+  .top-title{font-weight:800;font-size:12px}.updated{font-size:8px;color:#6b7e98;margin-top:3px}
+  .top-actions{display:flex;align-items:center;gap:8px}.mini-btn{height:34px;border:1px solid var(--border);background:#101b2d;border-radius:7px;padding:0 12px;color:#8ea2bd;display:flex;align-items:center;gap:7px;cursor:pointer}.mini-btn:hover{border-color:#426184;color:#dbe8f8}.mini-square{width:34px;padding:0;justify-content:center}
+
+  .content{padding:30px 27px 60px;min-width:0}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:17px}.page-title{font-size:22px;font-weight:800;letter-spacing:-.3px}.page-sub{margin-top:5px;color:#778ba6;font-size:10px}.head-actions{display:flex;gap:8px}
+  .btn{height:38px;border-radius:7px;border:1px solid var(--border);background:#111d30;padding:0 13px;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;font-weight:700;font-size:11px}.btn:hover{border-color:#426184}.btn.primary{background:var(--blue);border-color:var(--blue);color:white}.btn.primary:hover{background:#3b88ff}.btn.ghost{background:transparent}.btn.danger{background:var(--red-soft);border-color:rgba(239,98,98,.35);color:#ff9b9b}.btn:disabled{opacity:.42;cursor:not-allowed}
+  .summary{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));border:1px solid var(--border);background:var(--panel2);border-radius:9px;overflow:hidden;margin-bottom:14px}
+  .sum-item{padding:13px 15px;border-right:1px solid var(--border);cursor:pointer;min-width:0}.sum-item:last-child{border-right:0}.sum-item:hover{background:#17273d}.sum-label{color:#7187a5;font-size:9px;text-transform:uppercase;letter-spacing:.75px;font-weight:800}.sum-value{font-size:17px;font-weight:850;margin-top:5px;white-space:nowrap}.sum-note{font-size:9px;color:#6e82a0;margin-top:3px}.sum-value.blue{color:#70a7ff}.sum-value.green{color:#51d6a4}.sum-value.amber{color:#f4ba62}
+
+  .filters{display:flex;align-items:center;gap:7px;margin-bottom:12px;flex-wrap:wrap}.search{height:39px;width:330px;border:1px solid var(--border);background:#111b2c;color:#dce9f7;border-radius:7px;padding:0 12px;outline:none}.search:focus{border-color:#3d6da6;box-shadow:0 0 0 2px rgba(47,125,247,.08)}.filter-btn{height:39px;border:1px solid var(--border);background:#121e31;border-radius:7px;padding:0 12px;color:#c2d0e1;cursor:pointer;font-weight:700;font-size:10px}.filter-btn:hover,.filter-btn.on{border-color:#3d6da6;background:#172941}.filter-spacer{flex:1}.view-chips{display:flex;gap:5px;flex-wrap:wrap}.view-chip{height:31px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:#101b2d;color:#8499b7;cursor:pointer;font-size:9px;font-weight:700}.view-chip:hover{color:#d4e1f2}.view-chip.active{background:var(--blue-soft);border-color:#315f9d;color:#85b1ff}
+
+  .table-card{border:1px solid var(--border);border-radius:9px;overflow:hidden;background:#101a2a;min-width:0}
+  .table-scroll{overflow:auto;max-height:625px}.table-scroll::-webkit-scrollbar{height:10px;width:10px}.table-scroll::-webkit-scrollbar-track{background:#0e1827}.table-scroll::-webkit-scrollbar-thumb{background:#40536c;border-radius:6px;border:2px solid #0e1827}
+  table{border-collapse:separate;border-spacing:0;width:100%;min-width:1740px;font-size:10px}
+  thead{position:sticky;top:0;z-index:4}.group th{height:34px;background:#121d30;color:#2f7df7;text-transform:uppercase;letter-spacing:1.2px;font-size:9px;font-weight:900;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+  .cols th{height:42px;background:#17243a;color:#9fb2cb;text-align:left;padding:0 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-weight:700;white-space:nowrap}
+  .cols th .sort{color:#56708f;margin-left:5px}.cols th .funnel{color:#637a98;margin-left:5px}
+  tbody tr{background:#18283e}.tbody-alt{background:#17263b}tbody tr:nth-child(even){background:#16253a}tbody tr:hover{background:#1d3150}
+  td{height:47px;padding:8px 10px;border-right:1px solid var(--border);border-bottom:1px solid #26384f;vertical-align:middle;white-space:nowrap}.num{text-align:right;font-variant-numeric:tabular-nums}.strong{font-weight:800;color:#f0f5fd}.muted{color:#7288a5}.link{color:#dce9ff;cursor:pointer;text-decoration:none}.link:hover{color:#68a2ff;text-decoration:underline}.contract-link{color:#7faeff;font-weight:800;cursor:pointer}.contract-link:hover{text-decoration:underline}.payment-id{font-weight:800;color:#dbe8fa}
+  .reqs{display:flex;gap:4px;align-items:center;max-width:275px}.req-pill{height:23px;border:1px solid #355b89;background:#122846;color:#7fb0ff;padding:0 7px;border-radius:5px;display:inline-flex;align-items:center;font-size:8px;font-weight:800;cursor:pointer}.req-pill:hover{background:#183862;border-color:#4a7fbe;color:#afd0ff}.req-more{height:23px;border:1px solid var(--border);background:#101b2d;color:#91a6c1;padding:0 7px;border-radius:5px;display:inline-flex;align-items:center;font-size:8px;font-weight:800;cursor:pointer}
+  .positions-btn{border:0;background:none;color:#b6c8dd;padding:0;cursor:pointer;font-size:10px}.positions-btn:hover{color:#73a7ff;text-decoration:underline}.badge{display:inline-flex;align-items:center;height:22px;border-radius:11px;padding:0 8px;font-size:8px;font-weight:850;letter-spacing:.15px;border:1px solid transparent}.badge.green{color:#69ddb2;background:var(--green-soft);border-color:rgba(37,197,138,.25)}.badge.amber{color:#f5bd67;background:var(--amber-soft);border-color:rgba(240,168,59,.25)}.badge.red{color:#ff9696;background:var(--red-soft);border-color:rgba(239,98,98,.25)}.badge.blue{color:#78a9ff;background:var(--blue-soft);border-color:rgba(47,125,247,.28)}.badge.gray{color:#8da2be;background:#182438;border-color:#30425b}.badge.violet{color:#baa7ff;background:rgba(154,124,255,.1);border-color:rgba(154,124,255,.25)}
+  .money{font-weight:800;font-variant-numeric:tabular-nums}.money.green{color:#66dcae}.money.amber{color:#efb45c}.money.red{color:#ff8d8d}.actions{display:flex;gap:5px}.icon-btn{width:30px;height:30px;border:1px solid var(--border);border-radius:7px;background:#101b2d;color:#91a7c2;display:grid;place-items:center;cursor:pointer}.icon-btn:hover{border-color:#456489;color:#e2ebf7;background:#17263b}
+  .table-foot{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;color:#86a0bf;font-size:9px}.pager{display:flex;align-items:center;gap:5px}.pagebox{height:31px;min-width:36px;border:1px solid var(--border);background:#111d30;border-radius:6px;display:grid;place-items:center;color:#a2b4ca}.pagebox.select{padding:0 10px;display:flex;gap:8px}
+
+  .overlay{position:fixed;inset:0;background:rgba(2,7,15,.72);backdrop-filter:blur(2px);z-index:100;display:none;align-items:center;justify-content:center;padding:24px}.overlay.show{display:flex}.modal{width:min(1120px,96vw);max-height:92vh;background:#111d30;border:1px solid #314763;border-radius:11px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}.modal.large{width:min(1320px,96vw)}.modal.small{width:min(620px,94vw)}
+  .modal-head{min-height:64px;padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#121f32}.modal-title{font-size:16px;font-weight:850}.modal-sub{font-size:9px;color:#7d91ac;margin-top:4px}.close{width:33px;height:33px;border:1px solid var(--border);border-radius:7px;background:#101a2a;color:#91a6c2;cursor:pointer;display:grid;place-items:center}.close:hover{color:#fff;border-color:#496689}.modal-body{padding:18px;overflow:auto}.modal-body::-webkit-scrollbar{width:9px}.modal-body::-webkit-scrollbar-thumb{background:#3c506a;border-radius:8px}.modal-foot{padding:13px 18px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:#101b2d}.foot-right{display:flex;gap:7px}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:-2px -2px 16px;padding:0 2px}.tab{height:38px;padding:0 12px;border:0;border-bottom:2px solid transparent;background:transparent;color:#7189a8;font-weight:750;cursor:pointer;font-size:10px}.tab:hover{color:#c8d7e9}.tab.active{color:#79aaff;border-bottom-color:var(--blue)}
+  .tab-panel{display:none}.tab-panel.active{display:block}
+  .grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.grid-2{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.info-box{background:#15243a;border:1px solid var(--border);border-radius:8px;padding:11px 12px;min-height:66px}.info-label{font-size:8px;text-transform:uppercase;letter-spacing:.8px;color:#7890ad;font-weight:850}.info-value{margin-top:7px;font-weight:800;font-size:11px}.info-value.big{font-size:16px}.section{margin-top:16px}.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.section-title{font-weight:850;font-size:12px}.section-note{font-size:9px;color:#7188a5}.panel{border:1px solid var(--border);background:#142238;border-radius:8px;overflow:hidden}.panel-pad{padding:12px}
+  .context-bar{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;border:1px solid #325888;background:#122745;border-radius:8px;margin-bottom:12px}.context-left{display:flex;align-items:center;gap:10px}.context-icon{width:29px;height:29px;border-radius:7px;background:#19457a;display:grid;place-items:center;color:#91beff;font-weight:900}.context-title{font-weight:850;font-size:10px}.context-sub{font-size:9px;color:#86a2c2;margin-top:2px}.check-ok{color:#6bdcaf;font-weight:800;font-size:9px}.check-warn{color:#f2ba64;font-weight:800;font-size:9px}
+  .source-list{display:flex;flex-direction:column}.source-row{display:grid;grid-template-columns:135px 150px 175px 1fr 105px 120px;gap:10px;align-items:center;min-height:46px;border-bottom:1px solid var(--border);padding:7px 10px}.source-row:last-child{border-bottom:0}.source-head{background:#111d30;color:#7590b0;text-transform:uppercase;font-size:8px;font-weight:850;min-height:34px}.src-item{white-space:normal;line-height:1.3}.src-highlight{background:linear-gradient(90deg,rgba(47,125,247,.09),transparent)}
+  .doc-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.doc{border:1px solid var(--border);background:#142238;border-radius:8px;padding:11px;display:flex;gap:10px;align-items:flex-start;cursor:pointer}.doc:hover{border-color:#426184;background:#17283f}.doc-icon{width:34px;height:38px;border-radius:6px;background:#1b2c45;color:#75a9ff;display:grid;place-items:center;font-weight:900}.doc-title{font-weight:800;font-size:10px}.doc-meta{font-size:8px;color:#7289a6;margin-top:5px;line-height:1.45}
+  .approval-banner{border:1px solid #3d5777;background:#14243b;padding:10px 12px;border-radius:8px;color:#9cb2cc;font-size:9px;margin-bottom:10px}.approval-banner b{color:#dbe8f8}.timeline{display:flex;flex-direction:column}.step{display:grid;grid-template-columns:32px 1fr 120px;gap:10px;position:relative;padding:0 0 17px}.step:not(:last-child):before{content:"";position:absolute;left:15px;top:29px;bottom:0;width:1px;background:#334861}.step-dot{width:30px;height:30px;border-radius:50%;border:1px solid var(--border2);background:#132036;display:grid;place-items:center;color:#7790af;font-size:10px;font-weight:900;z-index:1}.step.done .step-dot{background:var(--green-soft);border-color:rgba(37,197,138,.35);color:#58d6a8}.step.current .step-dot{background:var(--blue-soft);border-color:#3e6fab;color:#7faeff}.step-name{font-weight:800;font-size:10px;margin-top:2px}.step-person{font-size:8px;color:#7189a7;margin-top:4px}.step-state{text-align:right;font-size:8px;color:#7c93af;margin-top:5px}
+  .history{display:flex;flex-direction:column}.history-row{display:grid;grid-template-columns:125px 150px 1fr 115px;gap:10px;border-bottom:1px solid var(--border);padding:9px 11px;align-items:start}.history-row:last-child{border-bottom:0}.history-time{font-size:9px;color:#879bb5}.history-user{font-size:9px;font-weight:750}.history-action{font-size:9px;line-height:1.45}.history-source{font-size:8px;color:#6f85a1;text-align:right}
+  .request-header{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:13px}.request-info{border:1px solid var(--border);background:#15243a;border-radius:8px;padding:10px}.request-items{border:1px solid var(--border);border-radius:8px;overflow:hidden}.ri-row{display:grid;grid-template-columns:42px minmax(240px,1.8fr) 95px 85px 115px 150px;align-items:center;min-height:48px;border-bottom:1px solid var(--border);padding:6px 10px;background:#15243a}.ri-row:last-child{border-bottom:0}.ri-head{min-height:34px;background:#111d30;color:#7890ad;text-transform:uppercase;font-size:8px;font-weight:850}.ri-row.in-contract{background:linear-gradient(90deg,rgba(47,125,247,.18),rgba(47,125,247,.055));box-shadow:inset 3px 0 0 var(--blue)}.ri-row.not-in-contract{color:#8397af}.ri-name{font-weight:800;line-height:1.35}.ri-sub{font-size:8px;color:#7690ad;margin-top:3px}.included-label{display:inline-flex;align-items:center;gap:5px;color:#8bb7ff;font-size:8px;font-weight:850}.not-label{color:#637b97;font-size:8px}.partial{color:#f1b960;font-size:8px;font-weight:800}
+  .empty{padding:42px;text-align:center;color:#738aa7}.toast-wrap{position:fixed;right:20px;bottom:20px;z-index:300;display:flex;flex-direction:column;gap:8px}.toast{min-width:310px;max-width:420px;background:#17273d;border:1px solid #38516f;border-radius:8px;box-shadow:var(--shadow);padding:11px 13px;display:flex;gap:9px;align-items:flex-start;animation:slide .18s ease}.toast.good{border-color:rgba(37,197,138,.42)}.toast.warn{border-color:rgba(240,168,59,.42)}.toast-title{font-size:10px;font-weight:850}.toast-sub{font-size:9px;color:#8197b2;margin-top:3px;line-height:1.35}@keyframes slide{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+  .field{display:flex;flex-direction:column;gap:6px}.field label{font-size:8px;color:#8298b5;text-transform:uppercase;letter-spacing:.7px;font-weight:850}.input,.select,.textarea{width:100%;border:1px solid var(--border);background:#101b2d;color:#e8f1fb;border-radius:7px;padding:0 10px;outline:none}.input,.select{height:37px}.textarea{min-height:80px;padding-top:9px;resize:vertical}.input:focus,.select:focus,.textarea:focus{border-color:#3f70aa}.helper{font-size:8px;color:#7087a4;line-height:1.4}.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.wizard-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:14px}.wiz{height:40px;border:1px solid var(--border);border-radius:7px;background:#132036;color:#7088a6;display:flex;align-items:center;padding:0 11px;gap:8px;font-size:9px;font-weight:800}.wiz.active{border-color:#3d74bd;background:#162b48;color:#d9e8fa}.wiz.done{border-color:rgba(37,197,138,.35);color:#5edaa9}.wiz-num{width:20px;height:20px;border-radius:6px;background:#1b2d47;display:grid;place-items:center}.wiz.active .wiz-num{background:var(--blue);color:white}.wiz.done .wiz-num{background:#124b3c;color:#58d6a6}
+  .coverage{display:grid;grid-template-columns:1fr 1fr;gap:8px}.coverage-item{border:1px solid var(--border);background:#142238;border-radius:7px;padding:9px 10px;display:flex;align-items:center;justify-content:space-between}.coverage-label{font-size:9px;color:#899eb8}.coverage-value{font-size:9px;font-weight:850}
+  .column-list{display:grid;grid-template-columns:1fr 1fr;gap:6px}.column-option{height:38px;border:1px solid var(--border);background:#142238;border-radius:7px;display:flex;align-items:center;gap:8px;padding:0 10px;cursor:pointer}.column-option input{accent-color:var(--blue)}
+  @media(max-width:1100px){.app{grid-template-columns:78px 1fr}.sidebar{width:78px}.brandname,.brandsub,.nav-title,.nav-item span:not(.ico),.profile>div:not(.avatar),.logout span,.badge-count{display:none}.nav-item{justify-content:center}.workspace{grid-column:2}.summary{grid-template-columns:repeat(3,1fr)}.grid-4{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brandmark">F</div><div><div class="brandname">Factory <b>OS</b></div><div class="brandsub">OPERATIONS HUB</div></div></div>
+    <div class="nav-title">МЕНЮ</div>
+    <div class="nav">
+      <div class="nav-item" data-ready="Дашборд"><span class="ico">⌘</span><span>Дашборд</span></div>
+      <div class="nav-item" data-ready="Заявки"><span class="ico">▤</span><span>Заявки</span><span class="badge-count">0</span></div>
+      <div class="nav-item" data-ready="Новая заявка"><span class="ico">＋</span><span>Новая заявка</span></div>
+    </div>
+    <div class="nav-title">ОПЕРАЦИИ</div>
+    <div class="nav">
+      <div class="nav-item" data-ready="Снабжение"><span class="ico">🛒</span><span>Снабжение</span></div>
+      <div class="nav-item active"><span class="ico">₽</span><span>Оплаты</span></div>
+      <div class="nav-item" data-ready="Поставщики"><span class="ico">♧</span><span>Поставщики</span></div>
+      <div class="nav-item" data-ready="Согласования"><span class="ico">✓</span><span>Согласования</span></div>
+    </div>
+    <div class="nav-title">НАСТРОЙКИ</div>
+    <div class="nav">
+      <div class="nav-item" data-ready="Настройки"><span class="ico">⚙</span><span>Настройки</span></div>
+      <div class="nav-item" data-ready="Должности"><span class="ico">▧</span><span>Должности</span></div>
+      <div class="nav-item" data-ready="Номенклатура"><span class="ico">☷</span><span>Номенклатура</span></div>
+      <div class="nav-item" data-ready="Пользователи"><span class="ico">♙</span><span>Пользователи</span></div>
+      <div class="nav-item" data-ready="Роли и права"><span class="ico">♢</span><span>Роли и права</span></div>
+      <div class="nav-item" data-ready="Workflow"><span class="ico">☷</span><span>Workflow</span></div>
+      <div class="nav-item" data-ready="Единицы измерения"><span class="ico">⌁</span><span>Единицы измерения</span></div>
+      <div class="nav-item" data-ready="Отделы"><span class="ico">♜</span><span>Отделы</span></div>
+      <div class="nav-item" data-ready="Склады"><span class="ico">▦</span><span>Склады</span></div>
+      <div class="nav-item" data-ready="Филиалы"><span class="ico">▥</span><span>Филиалы</span></div>
+    </div>
+    <div class="side-spacer"></div>
+    <div class="profile"><div class="avatar">F</div><div><div class="pname">FIRAT DENIZ</div><div class="phandle">@snabadmin</div></div></div>
+    <div class="logout"><span class="ico">↪</span><span>Выйти</span></div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <div><div class="top-title">Оплаты</div><div class="updated">Обновлено: 16.08.2026, 20:21:00</div></div>
+      <div class="top-actions">
+        <button class="mini-btn" data-ready="Все филиалы">♜&nbsp; Все филиалы</button>
+        <button class="mini-btn mini-square">RU</button>
+        <button class="mini-btn mini-square">☼</button>
+        <button class="mini-btn mini-square">♧</button>
+      </div>
+    </header>
+
+    <section class="content">
+      <div class="page-head">
+        <div><div class="page-title">Оплаты</div><div class="page-sub">Одна строка = один договор. Договор может включать позиции из нескольких заявок.</div></div>
+        <div class="head-actions">
+          <button class="btn ghost" id="importBtn">⇩ Импорт Excel</button>
+          <button class="btn primary" id="createBtn">＋ Создать оплату</button>
+        </div>
+      </div>
+
+      <div class="summary">
+        <div class="sum-item" data-status="all"><div class="sum-label">Сумма договоров</div><div class="sum-value" id="sumContracts">—</div><div class="sum-note">текущая выборка</div></div>
+        <div class="sum-item" data-status="approval"><div class="sum-label">На согласовании</div><div class="sum-value blue" id="sumApproval">—</div><div class="sum-note" id="sumApprovalCount">0 договоров</div></div>
+        <div class="sum-item" data-status="ready"><div class="sum-label">Готово к оплате</div><div class="sum-value amber" id="sumReady">—</div><div class="sum-note" id="sumReadyCount">0 договоров</div></div>
+        <div class="sum-item" data-status="paid"><div class="sum-label">Фактически оплачено</div><div class="sum-value green" id="sumPaid">—</div><div class="sum-note">включая частичные оплаты</div></div>
+        <div class="sum-item" data-status="balance"><div class="sum-label">Остаток</div><div class="sum-value amber" id="sumBalance">—</div><div class="sum-note">ещё не оплачено</div></div>
+      </div>
+
+      <div class="filters">
+        <input class="search" id="search" placeholder="Поиск: договор, фирма, заявка, товар..." />
+        <button class="filter-btn" id="filterBtn">⌘ Фильтры</button>
+        <button class="filter-btn" id="columnsBtn">▥ Столбцы <span style="background:#2f7df7;color:white;border-radius:10px;padding:1px 5px;margin-left:4px">16</span></button>
+        <button class="filter-btn" id="clearBtn">Очистить</button>
+        <div class="filter-spacer"></div>
+        <div class="view-chips" id="statusChips">
+          <button class="view-chip active" data-filter="all">Все</button>
+          <button class="view-chip" data-filter="approval">На согласовании</button>
+          <button class="view-chip" data-filter="approved">Согласовано</button>
+          <button class="view-chip" data-filter="ready">К оплате</button>
+          <button class="view-chip" data-filter="waiting_delivery">Ждёт поставку</button>
+          <button class="view-chip" data-filter="partial">Частично</button>
+          <button class="view-chip" data-filter="paid">Оплачено</button>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-scroll">
+          <table id="paymentsTable">
+            <thead>
+              <tr class="group">
+                <th colspan="2">ДАТА</th><th colspan="3">ОСНОВАНИЕ</th><th colspan="2">ПОСТАВЩИК</th><th colspan="2">ДОГОВОР</th><th colspan="4">ФИНАНСЫ</th><th colspan="3">КОНТРОЛЬ</th>
+              </tr>
+              <tr class="cols">
+                <th data-col="created">Дата</th><th data-col="id">№ оплаты</th><th data-col="requests">Заявки</th><th data-col="positions">Позиции</th><th data-col="coverage">Основание</th>
+                <th data-col="supplier">Фирма</th><th data-col="inn">ИНН</th><th data-col="contract">Договор №</th><th data-col="delivery">Поставка / условие</th>
+                <th data-col="amount" class="num">Сумма договора</th><th data-col="prepay" class="num">Предоплата</th><th data-col="paid" class="num">Оплачено</th><th data-col="balance" class="num">Остаток</th>
+                <th data-col="approval">Согласование</th><th data-col="status">Статус оплаты</th><th data-col="actions">Действия</th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <div class="table-foot"><div id="shown">Показаны 1–0 из 0</div><div class="pager"><span>Показывать</span><div class="pagebox select">25⌄</div><div class="pagebox">«</div><div class="pagebox">‹</div><span>1 / 1</span><div class="pagebox">›</div><div class="pagebox">»</div></div></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<!-- PAYMENT DETAIL -->
+<div class="overlay" id="paymentOverlay">
+  <div class="modal large">
+    <div class="modal-head"><div><div class="modal-title" id="payTitle">Оплата</div><div class="modal-sub" id="paySub"></div></div><button class="close" data-close="paymentOverlay">×</button></div>
+    <div class="modal-body">
+      <div class="tabs" id="payTabs">
+        <button class="tab active" data-tab="overview">Обзор</button><button class="tab" data-tab="basis">Основание</button><button class="tab" data-tab="docs">Документы</button><button class="tab" data-tab="approval">Согласование</button><button class="tab" data-tab="history">История</button>
+      </div>
+      <div class="tab-panel active" id="tab-overview"></div>
+      <div class="tab-panel" id="tab-basis"></div>
+      <div class="tab-panel" id="tab-docs"></div>
+      <div class="tab-panel" id="tab-approval"></div>
+      <div class="tab-panel" id="tab-history"></div>
+    </div>
+    <div class="modal-foot"><div id="payFootNote" class="muted" style="font-size:9px"></div><div class="foot-right" id="payActions"></div></div>
+  </div>
+</div>
+
+<!-- REQUEST DETAIL -->
+<div class="overlay" id="requestOverlay">
+  <div class="modal large">
+    <div class="modal-head"><div><div class="modal-title" id="reqTitle">Заявка</div><div class="modal-sub" id="reqSub"></div></div><button class="close" data-close="requestOverlay">×</button></div>
+    <div class="modal-body" id="reqBody"></div>
+    <div class="modal-foot"><div class="muted" style="font-size:9px">Синим выделены позиции/количества, относящиеся к открытому договору.</div><div class="foot-right"><button class="btn" id="openFullReq">Открыть полную заявку ↗</button><button class="btn primary" data-close="requestOverlay">Понятно</button></div></div>
+  </div>
+</div>
+
+<!-- POSITIONS -->
+<div class="overlay" id="positionsOverlay">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title" id="posTitle">Позиции договора</div><div class="modal-sub" id="posSub"></div></div><button class="close" data-close="positionsOverlay">×</button></div>
+    <div class="modal-body" id="posBody"></div>
+    <div class="modal-foot"><div></div><button class="btn primary" data-close="positionsOverlay">Закрыть</button></div>
+  </div>
+</div>
+
+<!-- FILTERS -->
+<div class="overlay" id="filterOverlay">
+  <div class="modal small">
+    <div class="modal-head"><div><div class="modal-title">Фильтры оплат</div><div class="modal-sub">Фильтры применяются к таблице договоров</div></div><button class="close" data-close="filterOverlay">×</button></div>
+    <div class="modal-body"><div class="form-grid"><div class="field"><label>Поставщик</label><select class="select" id="fSupplier"><option value="">Все</option></select></div><div class="field"><label>Тип оплаты</label><select class="select" id="fTerms"><option value="">Все</option><option>Предоплата</option><option>Постоплата</option><option>Смешанная</option></select></div><div class="field"><label>Статус согласования</label><select class="select" id="fApproval"><option value="">Все</option><option value="На согласовании">На согласовании</option><option value="Согласовано">Согласовано</option><option value="Не отправлено">Не отправлено</option></select></div><div class="field"><label>Номер заявки</label><input class="input" id="fRequest" placeholder="REQ-2026-..." /></div></div></div>
+    <div class="modal-foot"><button class="btn" id="resetFilters">Сбросить</button><div class="foot-right"><button class="btn" data-close="filterOverlay">Отмена</button><button class="btn primary" id="applyFilters">Применить</button></div></div>
+  </div>
+</div>
+
+<!-- COLUMNS -->
+<div class="overlay" id="columnsOverlay">
+  <div class="modal small">
+    <div class="modal-head"><div><div class="modal-title">Столбцы</div><div class="modal-sub">Скрывайте второстепенные поля, не меняя данные</div></div><button class="close" data-close="columnsOverlay">×</button></div>
+    <div class="modal-body"><div class="column-list" id="columnList"></div></div>
+    <div class="modal-foot"><button class="btn" id="resetColumns">По умолчанию</button><button class="btn primary" data-close="columnsOverlay">Готово</button></div>
+  </div>
+</div>
+
+<!-- CREATE WIZARD -->
+<div class="overlay" id="createOverlay">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title">Создать оплату</div><div class="modal-sub">Оплата создаётся только для одного договора. Несколько договоров объединить нельзя.</div></div><button class="close" data-close="createOverlay">×</button></div>
+    <div class="modal-body">
+      <div class="wizard-steps"><div class="wiz active" data-wiz="1"><span class="wiz-num">1</span>Договор</div><div class="wiz" data-wiz="2"><span class="wiz-num">2</span>Условия</div><div class="wiz" data-wiz="3"><span class="wiz-num">3</span>Проверка</div></div>
+      <div id="wizardBody"></div>
+    </div>
+    <div class="modal-foot"><button class="btn" id="wizBack" disabled>← Назад</button><div class="foot-right"><button class="btn" data-close="createOverlay">Отмена</button><button class="btn primary" id="wizNext">Далее →</button></div></div>
+  </div>
+</div>
+
+<!-- MARK PAID -->
+<div class="overlay" id="paidOverlay">
+  <div class="modal small">
+    <div class="modal-head"><div><div class="modal-title">Зафиксировать оплату</div><div class="modal-sub" id="paidSub"></div></div><button class="close" data-close="paidOverlay">×</button></div>
+    <div class="modal-body"><div class="form-grid"><div class="field"><label>Сумма оплаты</label><input class="input" id="paidAmount" type="number" /></div><div class="field"><label>Дата оплаты</label><input class="input" id="paidDate" type="date" value="2026-08-16" /></div><div class="field"><label>Способ</label><select class="select" id="paidMethod"><option>Банк</option><option>Наличные</option></select></div><div class="field"><label>Банковская ссылка / № платежа</label><input class="input" id="paidRef" placeholder="PAYMENT-REF-..." /></div></div><div class="helper" style="margin-top:10px">После сохранения система пересчитает «Оплачено» и «Остаток». Если остаток больше нуля — статус станет «Частично оплачено».</div></div>
+    <div class="modal-foot"><button class="btn" data-close="paidOverlay">Отмена</button><button class="btn primary" id="confirmPaid">Сохранить оплату</button></div>
+  </div>
+</div>
+
+<!-- APPROVAL PREVIEW -->
+<div class="overlay" id="approvalPreviewOverlay">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title">Что увидит согласующий</div><div class="modal-sub">Предпросмотр информационного блока для существующего модуля «Согласования»</div></div><button class="close" data-close="approvalPreviewOverlay">×</button></div>
+    <div class="modal-body" id="approvalPreviewBody"></div>
+    <div class="modal-foot"><div class="muted" style="font-size:9px">Маршрут и кнопки подписи остаются в уже готовом модуле «Согласования».</div><div class="foot-right"><button class="btn danger" id="demoReject">Отклонить</button><button class="btn primary" id="demoApprove">Согласовать</button></div></div>
+  </div>
+</div>
+
+<!-- IMPORT -->
+<div class="overlay" id="importOverlay">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title">Импорт формы оплаты Excel</div><div class="modal-sub">Поля из 08.07.2026.xlsx + обязательная привязка к заявкам Factory OS</div></div><button class="close" data-close="importOverlay">×</button></div>
+    <div class="modal-body">
+      <div class="context-bar"><div class="context-left"><div class="context-icon">X</div><div><div class="context-title">08.07.2026.xlsx</div><div class="context-sub">Найдены: товар, фирма, договор, ИНН, количество, цена, сумма, поставка, предоплата, оплата, дата оплаты</div></div></div><div class="check-warn">⚠ В Excel нет номера заявки</div></div>
+      <div class="section-title" style="margin-bottom:8px">Что произойдёт при импорте</div>
+      <div class="coverage"><div class="coverage-item"><span class="coverage-label">Фирма / ИНН</span><span class="coverage-value check-ok">Сопоставляется</span></div><div class="coverage-item"><span class="coverage-label">Договор №</span><span class="coverage-value check-ok">Ключ строки оплаты</span></div><div class="coverage-item"><span class="coverage-label">Товары / суммы</span><span class="coverage-value check-ok">Переносятся в позиции</span></div><div class="coverage-item"><span class="coverage-label">Заявки REQ</span><span class="coverage-value check-warn">Требуют привязки</span></div></div>
+      <div class="helper" style="margin-top:12px">Система не должна автоматически отправлять импортированную оплату на согласование, пока каждая оплачиваемая позиция не связана с исходной заявкой.</div>
+    </div>
+    <div class="modal-foot"><button class="btn" data-close="importOverlay">Закрыть</button><button class="btn primary" id="demoImport">Продолжить демонстрацию</button></div>
+  </div>
+</div>
+
+<script>
+const money = n => new Intl.NumberFormat('ru-RU').format(Math.round(n||0)) + ' UZS';
+const shortMoney = n => new Intl.NumberFormat('ru-RU',{notation:'compact',maximumFractionDigits:1}).format(n||0) + ' UZS';
+
+const requests = {
+ 'REQ-2026-00061':{requester:'FIRAT DENIZ',department:'Красильный цех',date:'05.08.2026',purpose:'Производственная потребность',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r61-1',name:'ALKALY',qty:10000,unit:'кг',price:3700},{id:'r61-2',name:'HYDROGEN PEROXIDE 50%',qty:3000,unit:'кг',price:7200},{id:'r61-3',name:'PH BUFFER SOLUTION',qty:8,unit:'л',price:65000},{id:'r61-4',name:'Фильтр технологический',qty:6,unit:'шт',price:480000}
+ ]},
+ 'REQ-2026-00067':{requester:'SADDETTIN AKMAN',department:'Ремонт и обслуживание оборудования',date:'07.08.2026',purpose:'Плановый ремонт линии',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r67-1',name:'SODYUM HIDROKSIT',qty:8000,unit:'кг',price:5200},{id:'r67-2',name:'18W LED LAMBA 120 cm',qty:10,unit:'шт',price:10000},{id:'r67-3',name:'TUP BASKI BICAĞI SELF SHARP DR BLADE 60°',qty:100,unit:'м',price:10000}
+ ]},
+ 'REQ-2026-00074':{requester:'ENES TURKMEN',department:'Ремонт и обслуживание оборудования',date:'10.08.2026',purpose:'Новое оборудование и модернизация',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r74-1',name:'TEKSTIL KIMYASALI AUX-14',qty:3000,unit:'кг',price:9600},{id:'r74-2',name:'DETERJAN ABC 3KG',qty:10,unit:'кг',price:7500},{id:'r74-3',name:'KABLO 1*1300 (ZARBDOR ORMB)',qty:20,unit:'шт',price:35000},{id:'r74-4',name:'Подшипник 6205',qty:100,unit:'шт',price:120000}
+ ]},
+ 'REQ-2026-00072':{requester:'OTABEK RUZIEV',department:'Механический цех',date:'10.08.2026',purpose:'Ремонт оборудования',priority:'Срочная',status:'Согласована',items:[
+   {id:'r72-1',name:'BALON SIKMA FULAR SILINDIRI, BAKIM',qty:1,unit:'усл.',price:30240000},{id:'r72-2',name:'Комплект уплотнений',qty:2,unit:'шт',price:3500000}
+ ]},
+ 'REQ-2026-00075':{requester:'DIJYANOVA GUZAL',department:'Лаборатория и контроль качества',date:'10.08.2026',purpose:'Лаборатория и контроль качества',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r75-1',name:'PH METRE PROBU SENTIX41, LABARATORY',qty:2,unit:'шт',price:4620000},{id:'r75-2',name:'BUFFER SOLUTION PH 10,01 250ML',qty:3,unit:'л',price:65000}
+ ]},
+ 'REQ-2026-00077':{requester:'ENES TURKMEN',department:'Ремонт и обслуживание оборудования',date:'11.08.2026',purpose:'Техническое оснащение',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r77-1',name:'PRECISION BALANCE, LABARATORY',qty:1,unit:'шт',price:4500000},{id:'r77-2',name:'KABLO 1*1300',qty:20,unit:'шт',price:35000},{id:'r77-3',name:'Подшипник 32008',qty:20,unit:'шт',price:100000},{id:'r77-4',name:'HAVA FILTRESI 1,5*3MT',qty:2,unit:'шт',price:25000},{id:'r77-5',name:'Масло ISO 68',qty:20,unit:'л',price:57000}
+ ]},
+ 'REQ-2026-00080':{requester:'AYDOS POLUNYAZOV',department:'Главный склад',date:'12.08.2026',purpose:'Обслуживание инфраструктуры',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r80-1',name:'Duş odası kazan dairesinin periyodik bakım hizmeti',qty:1,unit:'усл.',price:7545320},{id:'r80-2',name:'Термостат промышленный',qty:2,unit:'шт',price:850000}
+ ]},
+ 'REQ-2026-00081':{requester:'SERHAT KARAHAN',department:'Энергетика',date:'12.08.2026',purpose:'Периодическое обслуживание',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r81-1',name:'Elektrik ekipmanlarının periyodik test hizmeti, FABRIK',qty:1,unit:'усл.',price:86200000},{id:'r81-2',name:'Контроль сопротивления изоляции',qty:1,unit:'усл.',price:4000000}
+ ]},
+ 'REQ-2026-00083':{requester:'SAIDOVA MAXFUZA',department:'Административный отдел',date:'13.08.2026',purpose:'Оснащение общежития',priority:'Стандартная',status:'Согласована',items:[
+   {id:'r83-1',name:'Tek kışılık ortopedık yatak, CAMP KAZARMA',qty:60,unit:'шт',price:408000},{id:'r83-2',name:'Tekstil ürünleri, yatak seti, CAMP KAZARMA',qty:120,unit:'компл.',price:150000}
+ ]},
+ 'REQ-2026-00084':{requester:'IBROHIM BILDIK',department:'IT',date:'13.08.2026',purpose:'Безопасность и видеонаблюдение',priority:'Срочная',status:'Согласована',items:[
+   {id:'r84-1',name:'DS-2TD2617 10/PA, HIKVISION KAMERA, IT BOLUM',qty:5,unit:'шт',price:7683000},{id:'r84-2',name:'PoE Switch 24 port',qty:2,unit:'шт',price:3700000}
+ ]}
+};
+
+const payments = [
+ {id:'PAY-2026-00041',created:'16.08.2026',supplier:'ASR KIMYO INVEST',inn:'301723412',contract:'43 от дог.T20-1',amount:188816320,prepay:0,paid:0,terms:'Постоплата',delivery:'Товар принят',approval:'На согласовании',status:'approval',due:'20.08.2026',requests:['REQ-2026-00061','REQ-2026-00067','REQ-2026-00074'],allocations:[
+   {req:'REQ-2026-00061',item:'r61-1',qty:10000,amount:37000000},{req:'REQ-2026-00061',item:'r61-2',qty:3000,amount:21600000},{req:'REQ-2026-00067',item:'r67-1',qty:8000,amount:41600000},{req:'REQ-2026-00074',item:'r74-1',qty:3000,amount:28800000}
+ ],docs:['Договор 43/T20-1.pdf','Счёт INV-8241.pdf','Накладная NK-1138.pdf'],approvalStep:2},
+ {id:'PAY-2026-00042',created:'16.08.2026',supplier:'SUPER ROL MCHJ XK',inn:'206990414',contract:'363U',amount:30240000,prepay:0,paid:0,terms:'Предоплата',delivery:'После оплаты',approval:'Согласовано',status:'ready',due:'18.08.2026',requests:['REQ-2026-00072'],allocations:[{req:'REQ-2026-00072',item:'r72-1',qty:1,amount:30240000}],docs:['Договор 363U.pdf','Счёт SR-363U.pdf'],approvalStep:4},
+ {id:'PAY-2026-00043',created:'15.08.2026',supplier:'TRAKYA TEKSTIL',inn:'303696484',contract:'51',amount:9240000,prepay:0,paid:0,terms:'Постоплата',delivery:'Ожидает приёмку',approval:'Не отправлено',status:'waiting_delivery',due:'22.08.2026',requests:['REQ-2026-00075'],allocations:[{req:'REQ-2026-00075',item:'r75-1',qty:2,amount:9240000}],docs:['Договор 51.pdf','Счёт TRA-51.pdf'],approvalStep:0},
+ {id:'PAY-2026-00044',created:'15.08.2026',supplier:'MX MOBILES',inn:'307837835',contract:'10',amount:4500000,prepay:0,paid:4500000,terms:'Постоплата',delivery:'Товар принят',approval:'Согласовано',status:'paid',due:'16.08.2026',requests:['REQ-2026-00077'],allocations:[{req:'REQ-2026-00077',item:'r77-1',qty:1,amount:4500000}],docs:['Договор 10.pdf','Счёт MX-10.pdf','Платёжка 1041.pdf'],approvalStep:4,transactions:[{date:'16.08.2026',amount:4500000,ref:'UZ-1041',method:'Банк'}]},
+ {id:'PAY-2026-00045',created:'15.08.2026',supplier:'VENTO CLIMATE SOLUTION',inn:'312076738',contract:'09/26',amount:7545320,prepay:0,paid:0,terms:'Постоплата',delivery:'Услуга выполнена',approval:'На согласовании',status:'approval',due:'19.08.2026',requests:['REQ-2026-00080'],allocations:[{req:'REQ-2026-00080',item:'r80-1',qty:1,amount:7545320}],docs:['Договор 09-26.pdf','Акт выполненных работ.pdf','Счёт VCS-0926.pdf'],approvalStep:3},
+ {id:'PAY-2026-00046',created:'14.08.2026',supplier:'ENERGOLIDER',inn:'311817978',contract:'12',amount:86200000,prepay:43100000,paid:43100000,terms:'Смешанная',delivery:'Работы в процессе',approval:'Согласовано',status:'partial',due:'25.08.2026',requests:['REQ-2026-00081'],allocations:[{req:'REQ-2026-00081',item:'r81-1',qty:1,amount:86200000}],docs:['Договор 12.pdf','Счёт EN-12.pdf','Платёжка PRE-12.pdf'],approvalStep:4,transactions:[{date:'08.07.2026',amount:43100000,ref:'PRE-12-01',method:'Банк'}]},
+ {id:'PAY-2026-00047',created:'14.08.2026',supplier:'LEADER FOAM RUBBER',inn:'302578956',contract:'207-M',amount:24480000,prepay:0,paid:24480000,terms:'Постоплата',delivery:'Товар принят',approval:'Согласовано',status:'paid',due:'14.08.2026',requests:['REQ-2026-00083'],allocations:[{req:'REQ-2026-00083',item:'r83-1',qty:60,amount:24480000}],docs:['Договор 207-M.pdf','Счёт LFR-207.pdf','Платёжка 207M.pdf'],approvalStep:4,transactions:[{date:'08.07.2026',amount:24480000,ref:'207M-PAID',method:'Банк'}]},
+ {id:'PAY-2026-00048',created:'14.08.2026',supplier:'FAST SECURITY',inn:'312537376',contract:'5297',amount:38415000,prepay:0,paid:0,terms:'Предоплата',delivery:'После оплаты',approval:'Согласовано',status:'ready',due:'17.08.2026',requests:['REQ-2026-00084'],allocations:[{req:'REQ-2026-00084',item:'r84-1',qty:5,amount:38415000}],docs:['Договор 5297.pdf','Счёт FS-5297.pdf'],approvalStep:4},
+ {id:'PAY-2026-00049',created:'13.08.2026',supplier:'ASR KIMYO INVEST',inn:'301723412',contract:'44 от дог.T20-1',amount:9800000,prepay:9800000,paid:9800000,terms:'Предоплата',delivery:'В поставке',approval:'Согласовано',status:'paid',due:'13.08.2026',requests:['REQ-2026-00074'],allocations:[{req:'REQ-2026-00074',item:'r74-2',qty:10,amount:75000},{req:'REQ-2026-00074',item:'r74-3',qty:20,amount:700000}],docs:['Договор 44/T20-1.pdf','Счёт ASR-44.pdf','Платёжка ASR44.pdf'],approvalStep:4,transactions:[{date:'13.08.2026',amount:9800000,ref:'ASR44-01',method:'Банк'}]}
+];
+
+let currentFilter='all', activePayment=null, activeRequest=null, extraFilters={supplier:'',terms:'',approval:'',request:''};
+const allColumns=['created','id','requests','positions','coverage','supplier','inn','contract','delivery','amount','prepay','paid','balance','approval','status','actions'];
+let visibleColumns = new Set(allColumns);
+
+function statusText(p){return ({approval:'На согласовании',approved:'Согласовано',ready:'К оплате',waiting_delivery:'Ждёт поставку',partial:'Частично оплачено',paid:'Оплачено',draft:'Черновик',rejected:'Отклонено'})[p.status]||p.status}
+function statusBadge(p){const cls={approval:'blue',approved:'green',ready:'amber',waiting_delivery:'gray',partial:'violet',paid:'green',draft:'gray',rejected:'red'}[p.status]||'gray'; return `<span class="badge ${cls}">${statusText(p)}</span>`}
+function approvalBadge(p){let cls=p.approval==='Согласовано'?'green':p.approval==='На согласовании'?'blue':'gray';return `<span class="badge ${cls}">${p.approval}</span>`}
+function balance(p){return Math.max(0,p.amount-p.paid)}
+function hasBasis(p){return p.allocations.length>0 && p.allocations.every(a=>requests[a.req] && requests[a.req].items.some(i=>i.id===a.item))}
+
+function requestPills(p){let arr=p.requests;let shown=arr.slice(0,2).map(r=>`<button class="req-pill" onclick="event.stopPropagation();openRequest('${r}','${p.id}')">${r.replace('REQ-2026-','REQ-')}</button>`).join('');if(arr.length>2)shown+=`<button class="req-more" onclick="event.stopPropagation();openPositions('${p.id}')">+${arr.length-2}</button>`;return `<div class="reqs">${shown}</div>`}
+function tableRow(p){return `<tr onclick="openPayment('${p.id}')">
+<td data-col="created">${p.created}</td><td data-col="id"><span class="payment-id">${p.id}</span></td><td data-col="requests">${requestPills(p)}</td>
+<td data-col="positions"><button class="positions-btn" onclick="event.stopPropagation();openPositions('${p.id}')">${p.allocations.length} поз.</button></td>
+<td data-col="coverage">${hasBasis(p)?'<span class="badge green">✓ Все связаны</span>':'<span class="badge red">⚠ Проверить</span>'}</td>
+<td data-col="supplier" class="strong">${p.supplier}</td><td data-col="inn">${p.inn}</td><td data-col="contract"><span class="contract-link" onclick="event.stopPropagation();openPayment('${p.id}')">${p.contract}</span></td><td data-col="delivery">${p.delivery}<div class="muted" style="font-size:8px;margin-top:3px">${p.terms}</div></td>
+<td data-col="amount" class="num money">${money(p.amount)}</td><td data-col="prepay" class="num money">${p.prepay?money(p.prepay):'—'}</td><td data-col="paid" class="num money green">${p.paid?money(p.paid):'—'}</td><td data-col="balance" class="num money ${balance(p)?'amber':''}">${balance(p)?money(balance(p)):'—'}</td>
+<td data-col="approval">${approvalBadge(p)}</td><td data-col="status">${statusBadge(p)}</td><td data-col="actions"><div class="actions"><button class="icon-btn" title="Открыть" onclick="event.stopPropagation();openPayment('${p.id}')">↗</button><button class="icon-btn" title="Заявки" onclick="event.stopPropagation();openPositions('${p.id}')">≡</button><button class="icon-btn" title="Ещё" onclick="event.stopPropagation();toast('Действия','Документы, DNA, экспорт — доступны из карточки оплаты.')">⋯</button></div></td>
+</tr>`}
+
+function filteredPayments(){const q=document.getElementById('search').value.trim().toLowerCase();return payments.filter(p=>{
+ const filterOk = currentFilter==='all' || (currentFilter==='approval'&&p.status==='approval') || (currentFilter==='approved'&&p.approval==='Согласовано'&&p.status!=='paid'&&p.status!=='partial'&&p.status!=='ready') || p.status===currentFilter;
+ const text=[p.id,p.supplier,p.inn,p.contract,p.delivery,p.terms,...p.requests,...p.allocations.map(a=>requests[a.req]?.items.find(i=>i.id===a.item)?.name||'')].flat().join(' ').toLowerCase();
+ return filterOk && (!q||text.includes(q)) && (!extraFilters.supplier||p.supplier===extraFilters.supplier) && (!extraFilters.terms||p.terms===extraFilters.terms) && (!extraFilters.approval||p.approval===extraFilters.approval) && (!extraFilters.request||p.requests.some(r=>r.toLowerCase().includes(extraFilters.request.toLowerCase())));
+})}
+function render(){const list=filteredPayments();document.getElementById('tbody').innerHTML=list.map(tableRow).join('')||`<tr><td colspan="16"><div class="empty">По выбранным условиям оплат не найдено.</div></td></tr>`;document.getElementById('shown').textContent=`Показаны ${list.length?1:0}–${list.length} из ${list.length}`;applyColumnVisibility();updateSummary(list)}
+function updateSummary(list){let contracts=list.reduce((s,p)=>s+p.amount,0),paid=list.reduce((s,p)=>s+p.paid,0),bal=list.reduce((s,p)=>s+balance(p),0);let appr=list.filter(p=>p.status==='approval'),ready=list.filter(p=>p.status==='ready');document.getElementById('sumContracts').textContent=shortMoney(contracts);document.getElementById('sumPaid').textContent=shortMoney(paid);document.getElementById('sumBalance').textContent=shortMoney(bal);document.getElementById('sumApproval').textContent=shortMoney(appr.reduce((s,p)=>s+balance(p),0));document.getElementById('sumApprovalCount').textContent=`${appr.length} договоров`;document.getElementById('sumReady').textContent=shortMoney(ready.reduce((s,p)=>s+balance(p),0));document.getElementById('sumReadyCount').textContent=`${ready.length} договоров`}
+function applyColumnVisibility(){document.querySelectorAll('[data-col]').forEach(el=>el.style.display=visibleColumns.has(el.dataset.col)?'':'none')}
+
+function openPayment(id,tab='overview'){activePayment=payments.find(p=>p.id===id);if(!activePayment)return;document.getElementById('payTitle').innerHTML=`${activePayment.id} <span style="margin-left:7px">${statusBadge(activePayment)}</span>`;document.getElementById('paySub').textContent=`Договор ${activePayment.contract} · ${activePayment.supplier}`;renderPaymentPanels();show('paymentOverlay');activatePayTab(tab)}
+function renderPaymentPanels(){const p=activePayment;const reqCount=p.requests.length, itemCount=p.allocations.length;
+ document.getElementById('tab-overview').innerHTML=`
+ <div class="grid-4"><div class="info-box"><div class="info-label">Поставщик</div><div class="info-value">${p.supplier}</div><div class="muted" style="font-size:8px;margin-top:4px">ИНН ${p.inn}</div></div><div class="info-box"><div class="info-label">Договор</div><div class="info-value">${p.contract}</div><div class="muted" style="font-size:8px;margin-top:4px">1 договор = 1 оплата</div></div><div class="info-box"><div class="info-label">Сумма договора</div><div class="info-value big">${money(p.amount)}</div></div><div class="info-box"><div class="info-label">Остаток</div><div class="info-value big" style="color:${balance(p)?'#f2b45b':'#59d6a7'}">${money(balance(p))}</div></div></div>
+ <div class="section"><div class="context-bar"><div class="context-left"><div class="context-icon">REQ</div><div><div class="context-title">Основание подтверждено: ${reqCount} заявок · ${itemCount} позиций</div><div class="context-sub">Каждая позиция договора связана с конкретной позицией исходной заявки.</div></div></div><div class="check-ok">✓ ${itemCount}/${itemCount} связано</div></div>
+ <div class="panel panel-pad"><div class="section-head"><div><div class="section-title">Заявки, по которым идёт эта оплата</div><div class="section-note">Нажмите на номер заявки — откроется оригинальная заявка с подсветкой товаров текущего договора.</div></div></div><div style="display:flex;gap:6px;flex-wrap:wrap">${p.requests.map(r=>`<button class="req-pill" style="height:29px;font-size:9px" onclick="openRequest('${r}','${p.id}')">${r}</button>`).join('')}</div></div></div>
+ <div class="section"><div class="grid-4"><div class="info-box"><div class="info-label">Тип оплаты</div><div class="info-value">${p.terms}</div></div><div class="info-box"><div class="info-label">Условие поставки</div><div class="info-value">${p.delivery}</div></div><div class="info-box"><div class="info-label">Предоплата</div><div class="info-value">${p.prepay?money(p.prepay):'Нет'}</div></div><div class="info-box"><div class="info-label">Срок оплаты</div><div class="info-value">${p.due}</div></div></div></div>
+ <div class="section"><div class="section-head"><div class="section-title">Финансовое состояние</div></div><div class="grid-3"><div class="info-box"><div class="info-label">Всего по договору</div><div class="info-value big">${money(p.amount)}</div></div><div class="info-box"><div class="info-label">Оплачено</div><div class="info-value big" style="color:#5bd6a6">${money(p.paid)}</div></div><div class="info-box"><div class="info-label">Осталось</div><div class="info-value big" style="color:#f2b45b">${money(balance(p))}</div></div></div></div>`;
+ document.getElementById('tab-basis').innerHTML=basisHtml(p);document.getElementById('tab-docs').innerHTML=docsHtml(p);document.getElementById('tab-approval').innerHTML=approvalHtml(p);document.getElementById('tab-history').innerHTML=historyHtml(p);renderPayActions()}
+function basisHtml(p){return `<div class="context-bar"><div class="context-left"><div class="context-icon">✓</div><div><div class="context-title">Контроль происхождения расходов</div><div class="context-sub">Согласующий может проверить кто заказал каждый товар и из какой заявки он пришёл.</div></div></div><div class="check-ok">✓ Основание полное</div></div><div class="panel"><div class="source-row source-head"><div>Заявка</div><div>Заявитель</div><div>Отдел</div><div>Позиция договора</div><div>Кол-во</div><div>Сумма</div></div>${p.allocations.map(a=>{const r=requests[a.req],i=r.items.find(x=>x.id===a.item);return `<div class="source-row src-highlight"><div><span class="contract-link" onclick="openRequest('${a.req}','${p.id}')">${a.req}</span></div><div>${r.requester}</div><div>${r.department}</div><div class="src-item"><b>${i.name}</b><div class="muted" style="font-size:8px;margin-top:3px">Заказано в заявке: ${i.qty} ${i.unit}</div></div><div>${a.qty} ${i.unit}${a.qty<i.qty?'<div class="partial">часть заявки</div>':''}</div><div class="money">${money(a.amount)}</div></div>`}).join('')}</div>`}
+function docsHtml(p){return `<div class="section-head"><div><div class="section-title">Документы оплаты</div><div class="section-note">Согласующий открывает документы прямо из карточки.</div></div></div><div class="doc-list">${p.docs.map((d,idx)=>`<div class="doc" onclick="toast('Документ открыт','${d} — демонстрационный просмотр без изменения готового модуля документов.')"><div class="doc-icon">${idx===0?'DOC':idx===1?'INV':'PDF'}</div><div><div class="doc-title">${d}</div><div class="doc-meta">Связан с ${p.contract}<br>${p.supplier}</div></div></div>`).join('')}</div><div class="section"><div class="coverage"><div class="coverage-item"><span class="coverage-label">Договор</span><span class="coverage-value check-ok">✓ Приложен</span></div><div class="coverage-item"><span class="coverage-label">Счёт</span><span class="coverage-value check-ok">✓ Приложен</span></div><div class="coverage-item"><span class="coverage-label">Заявки</span><span class="coverage-value check-ok">✓ ${p.requests.length}</span></div><div class="coverage-item"><span class="coverage-label">Связь позиций</span><span class="coverage-value check-ok">✓ ${p.allocations.length}/${p.allocations.length}</span></div></div></div>`}
+function approvalHtml(p){const roles=['Руководитель / контролёр','Финансовый согласующий','Исполнительный директор','Генеральный директор'];return `<div class="approval-banner"><b>Важно:</b> это только информационный preview. Точный маршрут берётся из уже готового Workflow/прав и будет заменён вашим финальным flow. Страница «Оплаты» лишь показывает состояние и передаёт карточку в существующие «Согласования».</div><div class="timeline">${roles.map((r,idx)=>{let n=idx+1,cls=n<p.approvalStep?'done':n===p.approvalStep&&p.approval==='На согласовании'?'current':p.approval==='Согласовано'?'done':'';let state=cls==='done'?'Согласовано':cls==='current'?'Ожидает решения':'Ожидает';return `<div class="step ${cls}"><div class="step-dot">${cls==='done'?'✓':n}</div><div><div class="step-name">${r}</div><div class="step-person">Определяется Workflow и правами пользователя</div></div><div class="step-state">${state}</div></div>`}).join('')}</div><div style="display:flex;gap:7px;margin-top:4px"><button class="btn" onclick="previewApproval('${p.id}')">👁 Предпросмотр для согласующего</button><button class="btn primary" onclick="toast('Переход в Согласования','Открывается уже готовый модуль согласований для ${p.id}.','good')">Открыть в Согласованиях ↗</button></div>`}
+function historyHtml(p){let rows=[['16.08.2026 20:12','Finance Manager','Карточка оплаты открыта / проверено основание','Dashboard'],['16.08.2026 19:56','System',`${p.allocations.length} позиций связаны с ${p.requests.length} заявками`,'System'],['16.08.2026 19:50','Procurement',`Договор ${p.contract} передан в финансовый контур`,'Dashboard']];(p.transactions||[]).forEach(t=>rows.unshift([t.date+' 14:20','Finance Manager',`Оплата ${money(t.amount)} · ${t.ref}`,'Dashboard']));return `<div class="panel history">${rows.map(x=>`<div class="history-row"><div class="history-time">${x[0]}</div><div class="history-user">${x[1]}</div><div class="history-action">${x[2]}</div><div class="history-source">${x[3]}</div></div>`).join('')}</div>`}
+function renderPayActions(){const p=activePayment,a=document.getElementById('payActions'),note=document.getElementById('payFootNote');let html='';if(p.status==='waiting_delivery'){note.textContent='Постоплата: отправка на согласование заблокирована до подтверждения приёмки/выполнения.';html=`<button class="btn" onclick="toast('Условие не выполнено','Сначала склад/ответственный должен подтвердить приёмку.','warn')">Почему заблокировано?</button><button class="btn primary" disabled>Отправить на согласование</button>`}else if(p.approval==='Не отправлено'){note.textContent='После отправки создаётся запись в существующем модуле согласований.';html=`<button class="btn primary" onclick="sendApproval('${p.id}')">Отправить на согласование</button>`}else if(p.approval==='На согласовании'){note.textContent='Решение принимается в существующем модуле «Согласования».';html=`<button class="btn" onclick="previewApproval('${p.id}')">Предпросмотр согласующего</button><button class="btn primary" onclick="toast('Открываем Согласования','Переход к текущему согласующему по ${p.id}.','good')">Открыть согласование ↗</button>`}else if(p.status==='ready'){note.textContent='Согласование завершено. Теперь финансы могут выполнить фактический платёж.';html=`<button class="btn primary" onclick="openPaid('${p.id}')">Зафиксировать оплату</button>`}else if(p.status==='partial'){note.textContent='Часть договора уже оплачена. Можно зафиксировать следующую операцию в пределах остатка.';html=`<button class="btn primary" onclick="openPaid('${p.id}')">Добавить оплату</button>`}else if(p.status==='paid'){note.textContent='Договор полностью оплачен. История и документы остаются доступными.';html=`<button class="btn" onclick="activatePayTab('history')">Показать историю</button>`}a.innerHTML=html}
+
+function openRequest(reqNo,paymentId){const r=requests[reqNo],p=payments.find(x=>x.id===paymentId);if(!r||!p)return;activeRequest=reqNo;document.getElementById('reqTitle').textContent=reqNo;let allocs=p.allocations.filter(a=>a.req===reqNo);document.getElementById('reqSub').textContent=`Исходная заявка · контекст оплаты ${p.id} / договор ${p.contract}`;document.getElementById('reqBody').innerHTML=`
+ <div class="context-bar"><div class="context-left"><div class="context-icon">${allocs.length}</div><div><div class="context-title">В текущий договор ${p.contract} входят ${allocs.length} из ${r.items.length} позиций этой заявки</div><div class="context-sub">Остальные позиции показаны для контроля, но визуально приглушены.</div></div></div><div class="check-ok">✓ Заявка реально создана отделом</div></div>
+ <div class="request-header"><div class="request-info"><div class="info-label">Заявитель</div><div class="info-value">${r.requester}</div></div><div class="request-info"><div class="info-label">Отдел</div><div class="info-value">${r.department}</div></div><div class="request-info"><div class="info-label">Дата заявки</div><div class="info-value">${r.date}</div></div><div class="request-info"><div class="info-label">Статус</div><div class="info-value"><span class="badge green">${r.status}</span></div></div></div>
+ <div class="grid-2" style="margin-bottom:12px"><div class="info-box"><div class="info-label">Назначение / цель</div><div class="info-value">${r.purpose}</div></div><div class="info-box"><div class="info-label">Срочность</div><div class="info-value">${r.priority}</div></div></div>
+ <div class="section-head"><div><div class="section-title">Позиции оригинальной заявки</div><div class="section-note">Синяя строка = входит в текущую оплату. При частичном количестве показывается именно оплачиваемая часть.</div></div></div>
+ <div class="request-items"><div class="ri-row ri-head"><div>№</div><div>Наименование</div><div>Заказано</div><div>Ед.</div><div>В договоре</div><div>Связь с оплатой</div></div>${r.items.map((i,idx)=>{let a=allocs.find(x=>x.item===i.id),included=!!a;return `<div class="ri-row ${included?'in-contract':'not-in-contract'}"><div>${idx+1}</div><div><div class="ri-name">${i.name}</div><div class="ri-sub">Ориентир. цена: ${money(i.price)}</div></div><div>${i.qty}</div><div>${i.unit}</div><div>${included?`${a.qty} ${i.unit}`:'—'}${included&&a.qty<i.qty?`<div class="partial">частично: ${a.qty} из ${i.qty}</div>`:''}</div><div>${included?`<span class="included-label">● Входит в ${p.contract}</span>`:'<span class="not-label">Не относится к этой оплате</span>'}</div></div>`}).join('')}</div>`;show('requestOverlay')}
+function openPositions(id){const p=payments.find(x=>x.id===id);if(!p)return;document.getElementById('posTitle').textContent=`Позиции договора ${p.contract}`;document.getElementById('posSub').textContent=`${p.supplier} · ${p.allocations.length} позиций · ${p.requests.length} заявок`;document.getElementById('posBody').innerHTML=basisHtml(p);show('positionsOverlay')}
+
+function previewApproval(id){const p=payments.find(x=>x.id===id);if(!p)return;activePayment=p;document.getElementById('approvalPreviewBody').innerHTML=`<div class="grid-3"><div class="info-box"><div class="info-label">Поставщик</div><div class="info-value">${p.supplier}</div></div><div class="info-box"><div class="info-label">Договор</div><div class="info-value">${p.contract}</div></div><div class="info-box"><div class="info-label">К оплате</div><div class="info-value big">${money(balance(p)||p.amount)}</div></div></div><div class="section"><div class="context-bar"><div class="context-left"><div class="context-icon">✓</div><div><div class="context-title">${p.requests.length} исходных заявок · ${p.allocations.length} оплачиваемых позиций</div><div class="context-sub">Руководитель может открыть любую заявку и проверить заказчика и первоначальный состав.</div></div></div><div class="check-ok">✓ Все позиции имеют основание</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${p.requests.map(r=>`<button class="req-pill" style="height:28px" onclick="openRequest('${r}','${p.id}')">${r}</button>`).join('')}</div>${basisHtml(p)}</div><div class="section"><div class="coverage"><div class="coverage-item"><span class="coverage-label">Договор</span><span class="coverage-value check-ok">✓ Есть</span></div><div class="coverage-item"><span class="coverage-label">Счёт</span><span class="coverage-value check-ok">✓ Есть</span></div><div class="coverage-item"><span class="coverage-label">Все позиции имеют REQ</span><span class="coverage-value check-ok">✓ Да</span></div><div class="coverage-item"><span class="coverage-label">Повторная оплата</span><span class="coverage-value check-ok">✓ Не найдена</span></div></div></div>`;show('approvalPreviewOverlay')}
+
+function sendApproval(id){const p=payments.find(x=>x.id===id);p.approval='На согласовании';p.status='approval';p.approvalStep=1;toast('Отправлено на согласование',`${p.id} передан в существующий workflow.`, 'good');render();openPayment(id,'approval')}
+function openPaid(id){activePayment=payments.find(x=>x.id===id);document.getElementById('paidSub').textContent=`${activePayment.id} · ${activePayment.supplier} · остаток ${money(balance(activePayment))}`;document.getElementById('paidAmount').value=balance(activePayment);document.getElementById('paidRef').value='';show('paidOverlay')}
+function confirmPaid(){let p=activePayment,amt=Number(document.getElementById('paidAmount').value||0);if(!amt||amt<=0)return toast('Неверная сумма','Введите сумму больше нуля.','warn');if(amt>balance(p))return toast('Сумма выше остатка',`Максимум: ${money(balance(p))}.`,'warn');p.paid+=amt;p.transactions=p.transactions||[];p.transactions.push({date:document.getElementById('paidDate').value.split('-').reverse().join('.'),amount:amt,ref:document.getElementById('paidRef').value||'без ссылки',method:document.getElementById('paidMethod').value});p.status=balance(p)===0?'paid':'partial';close('paidOverlay');toast('Оплата сохранена',balance(p)===0?'Договор полностью оплачен.':`Остаток: ${money(balance(p))}.`,'good');render();openPayment(p.id,'overview')}
+
+function activatePayTab(name){document.querySelectorAll('#payTabs .tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===name));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));document.getElementById('tab-'+name)?.classList.add('active')}
+
+document.getElementById('payTabs').addEventListener('click',e=>{let t=e.target.closest('.tab');if(t)activatePayTab(t.dataset.tab)});
+
+function show(id){document.getElementById(id).classList.add('show')}
+function close(id){document.getElementById(id).classList.remove('show')}
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>close(b.dataset.close)));
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('mousedown',e=>{if(e.target===o)close(o.id)}));
+function toast(title,sub='',type=''){let w=document.getElementById('toasts'),d=document.createElement('div');d.className='toast '+type;d.innerHTML=`<div>${type==='good'?'✓':type==='warn'?'!':'i'}</div><div><div class="toast-title">${title}</div><div class="toast-sub">${sub}</div></div>`;w.appendChild(d);setTimeout(()=>d.remove(),3400)}
+
+// Filters
+statusChips.addEventListener('click',e=>{let b=e.target.closest('.view-chip');if(!b)return;document.querySelectorAll('.view-chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentFilter=b.dataset.filter;render()});
+document.getElementById('search').addEventListener('input',render);
+document.getElementById('clearBtn').addEventListener('click',()=>{document.getElementById('search').value='';extraFilters={supplier:'',terms:'',approval:'',request:''};currentFilter='all';document.querySelectorAll('.view-chip').forEach(x=>x.classList.toggle('active',x.dataset.filter==='all'));render()});
+document.getElementById('filterBtn').addEventListener('click',()=>show('filterOverlay'));
+const supplierSelect=document.getElementById('fSupplier');[...new Set(payments.map(p=>p.supplier))].sort().forEach(s=>supplierSelect.insertAdjacentHTML('beforeend',`<option>${s}</option>`));
+document.getElementById('applyFilters').addEventListener('click',()=>{extraFilters={supplier:fSupplier.value,terms:fTerms.value,approval:fApproval.value,request:fRequest.value};close('filterOverlay');document.getElementById('filterBtn').classList.toggle('on',Object.values(extraFilters).some(Boolean));render()});
+document.getElementById('resetFilters').addEventListener('click',()=>{fSupplier.value=fTerms.value=fApproval.value=fRequest.value='';extraFilters={supplier:'',terms:'',approval:'',request:''};document.getElementById('filterBtn').classList.remove('on');render()});
+document.querySelectorAll('.sum-item').forEach(x=>x.addEventListener('click',()=>{let s=x.dataset.status;if(s==='balance'){currentFilter='all';document.getElementById('search').value='';toast('Остаток к оплате','Используйте фильтры «К оплате», «На согласовании» и «Частично».');}else if(s==='all'){currentFilter='all'}else currentFilter=s;document.querySelectorAll('.view-chip').forEach(c=>c.classList.toggle('active',c.dataset.filter===currentFilter));render()}));
+
+// Columns
+const labels={created:'Дата',id:'№ оплаты',requests:'Заявки',positions:'Позиции',coverage:'Основание',supplier:'Фирма',inn:'ИНН',contract:'Договор №',delivery:'Поставка / условие',amount:'Сумма договора',prepay:'Предоплата',paid:'Оплачено',balance:'Остаток',approval:'Согласование',status:'Статус оплаты',actions:'Действия'};
+function renderColumns(){columnList.innerHTML=allColumns.map(c=>`<label class="column-option"><input type="checkbox" data-column="${c}" ${visibleColumns.has(c)?'checked':''} ${['requests','contract','amount','approval','status','actions'].includes(c)?'disabled':''}><span>${labels[c]}${['requests','contract','amount'].includes(c)?' · обязательный':''}</span></label>`).join('');columnList.querySelectorAll('input:not(:disabled)').forEach(i=>i.addEventListener('change',()=>{i.checked?visibleColumns.add(i.dataset.column):visibleColumns.delete(i.dataset.column);applyColumnVisibility()}))}
+document.getElementById('columnsBtn').addEventListener('click',()=>{renderColumns();show('columnsOverlay')});document.getElementById('resetColumns').addEventListener('click',()=>{visibleColumns=new Set(allColumns);renderColumns();applyColumnVisibility()});
+
+// Create wizard
+let wizStep=1,wizData={contract:'',terms:'Предоплата',due:'2026-08-20',note:''};
+const draftContracts=[{contract:'84-A',supplier:'EURO STAR IMPEX',inn:'207110066',amount:6501600,requests:['REQ-2026-00077'],items:1,allocations:[{req:'REQ-2026-00077',item:'r77-3',qty:20,amount:2000000}]},{contract:'85-C',supplier:'ASR KIMYO INVEST',inn:'301723412',amount:12750000,requests:['REQ-2026-00061','REQ-2026-00074'],items:3,allocations:[{req:'REQ-2026-00061',item:'r61-3',qty:8,amount:520000},{req:'REQ-2026-00074',item:'r74-2',qty:10,amount:75000},{req:'REQ-2026-00074',item:'r74-4',qty:60,amount:7200000}]}];
+function renderWizard(){document.querySelectorAll('.wiz').forEach(x=>{let n=+x.dataset.wiz;x.classList.toggle('active',n===wizStep);x.classList.toggle('done',n<wizStep)});wizBack.disabled=wizStep===1;wizNext.textContent=wizStep===3?'Создать оплату':'Далее →';let b=wizardBody;if(wizStep===1)b.innerHTML=`<div class="field"><label>Выберите договор</label><select class="select" id="wizContract"><option value="">— Выберите один договор —</option>${draftContracts.map((d,i)=>`<option value="${i}">${d.contract} · ${d.supplier} · ${money(d.amount)}</option>`).join('')}</select><div class="helper">Здесь нельзя выбрать два договора. Даже если фирма одинаковая, каждый договор создаёт отдельную строку оплаты.</div></div><div class="context-bar" style="margin-top:12px"><div class="context-left"><div class="context-icon">1</div><div><div class="context-title">Жёсткое правило: один договор = одна карточка оплаты</div><div class="context-sub">Заявок и товаров внутри договора может быть сколько угодно.</div></div></div></div>`;
+ if(wizStep===2){let d=draftContracts[+wizData.contract];b.innerHTML=`<div class="grid-3"><div class="info-box"><div class="info-label">Договор</div><div class="info-value">${d.contract}</div></div><div class="info-box"><div class="info-label">Поставщик</div><div class="info-value">${d.supplier}</div></div><div class="info-box"><div class="info-label">Сумма</div><div class="info-value big">${money(d.amount)}</div></div></div><div class="form-grid" style="margin-top:12px"><div class="field"><label>Тип оплаты</label><select class="select" id="wizTerms"><option>Предоплата</option><option>Постоплата</option><option>Смешанная</option></select></div><div class="field"><label>Плановая дата</label><input class="input" type="date" id="wizDue" value="${wizData.due}"></div><div class="field" style="grid-column:1/-1"><label>Комментарий финансов</label><textarea class="textarea" id="wizNote" placeholder="Причина, условия, важные детали..."></textarea></div></div>`;document.getElementById('wizTerms').value=wizData.terms}
+ if(wizStep===3){let d=draftContracts[+wizData.contract];b.innerHTML=`<div class="context-bar"><div class="context-left"><div class="context-icon">✓</div><div><div class="context-title">Проверьте основание перед созданием</div><div class="context-sub">${d.requests.length} заявок · ${d.items} позиций · ${d.supplier}</div></div></div><div class="check-ok">✓ Готово</div></div><div class="grid-2"><div class="info-box"><div class="info-label">Договор</div><div class="info-value">${d.contract}</div></div><div class="info-box"><div class="info-label">Тип оплаты</div><div class="info-value">${wizData.terms}</div></div><div class="info-box"><div class="info-label">Заявки</div><div class="info-value">${d.requests.join(', ')}</div></div><div class="info-box"><div class="info-label">Сумма</div><div class="info-value">${money(d.amount)}</div></div></div><div class="helper" style="margin-top:12px">После создания карточка остаётся «Черновиком». Отправка в существующий модуль согласований — отдельное действие.</div>`}}
+document.getElementById('createBtn').addEventListener('click',()=>{wizStep=1;wizData={contract:'',terms:'Предоплата',due:'2026-08-20',note:''};renderWizard();show('createOverlay')});
+document.getElementById('wizNext').addEventListener('click',()=>{if(wizStep===1){let v=document.getElementById('wizContract').value;if(v==='')return toast('Выберите договор','Оплата не может быть создана без одного конкретного договора.','warn');wizData.contract=v;wizStep=2;renderWizard();return}if(wizStep===2){wizData.terms=wizTerms.value;wizData.due=wizDue.value;wizData.note=wizNote.value;wizStep=3;renderWizard();return}let d=draftContracts[+wizData.contract];let id='PAY-2026-'+String(50+payments.length).padStart(5,'0');payments.unshift({id,created:'16.08.2026',supplier:d.supplier,inn:d.inn,contract:d.contract,amount:d.amount,prepay:0,paid:0,terms:wizData.terms,delivery:wizData.terms==='Постоплата'?'Ожидает приёмку':'После оплаты',approval:'Не отправлено',status:wizData.terms==='Постоплата'?'waiting_delivery':'draft',due:wizData.due.split('-').reverse().join('.'),requests:d.requests,allocations:d.allocations,docs:[`Договор ${d.contract}.pdf`],approvalStep:0});close('createOverlay');toast('Оплата создана',`${id}: отдельная карточка по договору ${d.contract}.`,'good');render()});document.getElementById('wizBack').addEventListener('click',()=>{if(wizStep>1){wizStep--;renderWizard()}});
+
+// Import / demo
+importBtn.addEventListener('click',()=>show('importOverlay'));demoImport.addEventListener('click',()=>toast('Импорт подготовлен','Следующий обязательный шаг — сопоставить позиции Excel с заявками REQ. Автосогласование запрещено.','good'));
+
+// Approval demo actions
+function demoDecision(kind){if(!activePayment)return;if(kind==='approve'){activePayment.approvalStep=Math.min(4,(activePayment.approvalStep||1)+1);if(activePayment.approvalStep>=4){activePayment.approval='Согласовано';activePayment.status='ready'}toast('Демо-согласование',activePayment.approval==='Согласовано'?'Маршрут завершён, карточка готова к фактической оплате.':'Передано следующему согласующему.','good')}else{activePayment.approval='Не отправлено';activePayment.status='draft';toast('Демо-отклонение','Карточка возвращена на корректировку.','warn')}close('approvalPreviewOverlay');render();openPayment(activePayment.id,'approval')}
+demoApprove.addEventListener('click',()=>demoDecision('approve'));demoReject.addEventListener('click',()=>demoDecision('reject'));
+
+// Existing modules aren't being redesigned
+ document.querySelectorAll('[data-ready]').forEach(n=>n.addEventListener('click',()=>toast(`${n.dataset.ready} уже готово`,`Этот прототип не меняет готовый модуль «${n.dataset.ready}».`)));
+ document.getElementById('openFullReq').addEventListener('click',()=>toast('Полная заявка','В реальном Factory OS откроется уже готовая страница '+activeRequest+'.','good'));
+ document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.overlay.show').forEach(o=>close(o.id))});
+
+render();
+</script>
+</body>
+</html>

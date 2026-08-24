@@ -17,8 +17,8 @@ const dashboardPermissions: PermissionCode[] = [
 ]
 
 export function useAuthorization() {
-  const { data, currentUserId, setCurrentUserId } = useSettings()
-  const currentUser = data.users.find((user) => user.id === currentUserId) ?? data.users[0]
+  const { data, currentUserId } = useSettings()
+  const currentUser = data.users.find((user) => user.id === currentUserId)
   const roles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
   const can = (permission: PermissionCode) => hasPermission(roles, permission)
   const canAny = (permissions: readonly PermissionCode[]) => hasAnyPermission(roles, permissions)
@@ -39,7 +39,6 @@ export function useAuthorization() {
     currentUser,
     currentUserId,
     roles,
-    setCurrentUserId,
     can,
     canAny,
     canAccessDashboard: canAny(dashboardPermissions),

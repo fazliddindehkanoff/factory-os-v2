@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
+import type { OrderRecord } from "@/lib/orders"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -47,6 +48,7 @@ type OrderDraft = {
   lines: OrderLine[]
   comment: string
   files: File[]
+  existingAttachmentNames: string[]
 }
 
 const emptyLine = (): OrderLine => ({
@@ -56,26 +58,163 @@ const emptyLine = (): OrderLine => ({
   note: "",
 })
 
-export function OrderWizard({ lang, messages, today }: { lang: Locale; messages: Messages; today: string }) {
+export function OrderWizard({
+  lang,
+  messages,
+  today,
+  reviseOrderId,
+}: {
+  lang: Locale
+  messages: Messages
+  today: string
+  reviseOrderId?: string
+}) {
+  const { orders, storageReady } = useOrders()
+  const { currentUser } = useAuthorization()
+  const revisionOrder = reviseOrderId
+    ? orders.find((order) => order.id === reviseOrderId)
+    : undefined
+
+  if (reviseOrderId && !storageReady) {
+    return <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">{revisionCopy(lang).loading}</div>
+  }
+  if (
+    reviseOrderId &&
+    (!revisionOrder ||
+      revisionOrder.status !== "rejected" ||
+      revisionOrder.createdByUserId !== currentUser?.id)
+  ) {
+    return <AccessDenied lang={lang} permissions={["requests.create"]} />
+  }
+
+  return (
+    <OrderWizardForm
+      key={`${revisionOrder?.id ?? "new-order"}:${currentUser?.id ?? "anonymous"}`}
+      lang={lang}
+      messages={messages}
+      today={today}
+      revisionOrder={revisionOrder}
+    />
+  )
+}
+
+function OrderWizardForm({
+  lang,
+  messages,
+  today,
+  revisionOrder,
+}: {
+  lang: Locale
+  messages: Messages
+  today: string
+  revisionOrder?: OrderRecord
+}) {
   const { data } = useSettings()
-  const { addOrder } = useOrders()
-  const { can } = useAuthorization()
+  const { addOrder, resubmitOrder } = useOrders()
+  const { can, currentUser } = useAuthorization()
+  const assistantCreatesForSupervisors = currentUser?.roleIds.includes("role-requester") ?? false
+  const isDepartmentSupervisor = currentUser?.roleIds.includes("role-dept_head") ?? false
+  const assignedDepartmentIds = data.departments
+    .filter((department) => currentUser?.departmentIds.includes(department.id))
+    .map((department) => department.id)
+  const initialDepartmentIds = isDepartmentSupervisor && assignedDepartmentIds.length === 1
+    ? assignedDepartmentIds
+    : []
+  const initialBranchIds = getBranchIds(initialDepartmentIds)
+  const selectedInitialBranchIds = initialBranchIds.length === 1 ? initialBranchIds : []
+  const initialWarehouses = getWarehouses(initialDepartmentIds, selectedInitialBranchIds)
+  const revisionSupervisor = revisionOrder && assistantCreatesForSupervisors
+    ? data.users.find(
+        (user) =>
+          user.roleIds.includes("role-dept_head") &&
+          user.departmentIds.some((id) => revisionOrder.departmentIds.includes(id)),
+      )
+    : undefined
+  const fixedRevisionApplicant = isDepartmentSupervisor ? currentUser : revisionSupervisor
+  const revisionApplicantId = fixedRevisionApplicant?.id ?? revisionOrder?.applicantId ?? ""
+  const revisionDepartmentIds = fixedRevisionApplicant
+    ? revisionOrder?.departmentIds.filter((id) => fixedRevisionApplicant.departmentIds.includes(id)) ?? []
+    : revisionOrder?.departmentIds ?? []
+  const normalizedRevisionDepartmentIds = revisionDepartmentIds.length
+    ? revisionDepartmentIds
+    : fixedRevisionApplicant?.departmentIds ?? []
+  const revisionAllowedBranchIds = [
+    ...new Set(
+      data.departments
+        .filter((department) => normalizedRevisionDepartmentIds.includes(department.id))
+        .flatMap((department) => department.branchIds),
+    ),
+  ]
+  const matchingRevisionBranchIds = revisionOrder?.branchIds.filter((id) =>
+    revisionAllowedBranchIds.includes(id),
+  ) ?? []
+  const normalizedRevisionBranchIds = matchingRevisionBranchIds.length
+    ? matchingRevisionBranchIds
+    : revisionAllowedBranchIds.length === 1
+      ? revisionAllowedBranchIds
+      : []
+  const revisionAllowedWarehouseIds = new Set(
+    data.departments
+      .filter((department) => normalizedRevisionDepartmentIds.includes(department.id))
+      .flatMap((department) => department.warehouseIds),
+  )
+  const matchingRevisionWarehouseId = revisionOrder &&
+    revisionAllowedWarehouseIds.has(revisionOrder.warehouseId) &&
+    data.warehouses
+      .find((warehouse) => warehouse.id === revisionOrder.warehouseId)
+      ?.branchIds.some((id) => normalizedRevisionBranchIds.includes(id))
+    ? revisionOrder.warehouseId
+    : ""
+  const revisionWarehouses = getWarehouses(
+    normalizedRevisionDepartmentIds,
+    normalizedRevisionBranchIds,
+  )
+  const normalizedRevisionWarehouseId = matchingRevisionWarehouseId ||
+    (revisionWarehouses.length === 1 ? revisionWarehouses[0].id : "")
+  const legacyApplicantAdjusted = Boolean(
+    revisionOrder && fixedRevisionApplicant && revisionOrder.applicantId !== fixedRevisionApplicant.id,
+  )
   const [step, setStep] = React.useState(1)
   const [error, setError] = React.useState("")
   const [publishedOrderNumber, setPublishedOrderNumber] = React.useState("")
-  const [draft, setDraft] = React.useState<OrderDraft>({
-    type: "material",
-    applicantId: "",
-    departmentIds: [],
-    branchIds: [],
-    warehouseId: "",
-    purposeId: "",
-    expectedDate: "",
-    lines: [{ id: "order-line-initial", productId: "", quantity: "", note: "" }],
-    comment: "",
-    files: [],
-  })
+  const [draft, setDraft] = React.useState<OrderDraft>(() =>
+    revisionOrder
+      ? {
+          type: revisionOrder.type,
+          applicantId: revisionApplicantId,
+          departmentIds: normalizedRevisionDepartmentIds,
+          branchIds: normalizedRevisionBranchIds,
+          warehouseId: normalizedRevisionWarehouseId,
+          purposeId: revisionOrder.purposeId,
+          expectedDate: revisionOrder.expectedDate,
+          lines: revisionOrder.lines.map((line) => ({
+            id: line.id,
+            productId: line.productId,
+            quantity: String(line.quantity),
+            note: line.note,
+          })),
+          comment: revisionOrder.comment,
+          files: [],
+          existingAttachmentNames: revisionOrder.attachmentNames,
+        }
+      : {
+          type: "material",
+          applicantId: isDepartmentSupervisor ? currentUser?.id ?? "" : "",
+          departmentIds: initialDepartmentIds,
+          branchIds: selectedInitialBranchIds,
+          warehouseId: initialWarehouses.length === 1 ? initialWarehouses[0].id : "",
+          purposeId: "",
+          expectedDate: "",
+          lines: [{ id: "order-line-initial", productId: "", quantity: "", note: "" }],
+          comment: "",
+          files: [],
+          existingAttachmentNames: [],
+        },
+  )
 
+  const availableApplicants = assistantCreatesForSupervisors
+    ? data.users.filter((user) => user.roleIds.includes("role-dept_head"))
+    : data.users
   const applicant = data.users.find((user) => user.id === draft.applicantId)
   const availableDepartments = data.departments.filter((department) =>
     applicant?.departmentIds.includes(department.id),
@@ -101,6 +240,27 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
     setDraft((current) => ({ ...current, [key]: value }))
   }
 
+  function getBranchIds(departmentIds: string[]) {
+    return [...new Set(
+      data.departments
+        .filter((department) => departmentIds.includes(department.id))
+        .flatMap((department) => department.branchIds),
+    )]
+  }
+
+  function getWarehouses(departmentIds: string[], branchIds: string[]) {
+    const warehouseIds = new Set(
+      data.departments
+        .filter((department) => departmentIds.includes(department.id))
+        .flatMap((department) => department.warehouseIds),
+    )
+    return data.warehouses.filter(
+      (warehouse) =>
+        warehouseIds.has(warehouse.id) &&
+        warehouse.branchIds.some((branchId) => branchIds.includes(branchId)),
+    )
+  }
+
   function selectApplicant(applicantId: string) {
     const user = data.users.find((candidate) => candidate.id === applicantId)
     const departmentIds = user?.departmentIds ?? []
@@ -109,40 +269,48 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
       .filter((department) => selectedDepartmentIds.includes(department.id))
       .flatMap((department) => department.branchIds)
     const uniqueBranchIds = [...new Set(branchIds)]
+    const selectedBranchIds = uniqueBranchIds.length === 1 ? uniqueBranchIds : []
+    const warehouses = getWarehouses(selectedDepartmentIds, selectedBranchIds)
 
     setDraft((current) => ({
       ...current,
       applicantId,
       departmentIds: selectedDepartmentIds,
-      branchIds: uniqueBranchIds.length === 1 ? uniqueBranchIds : [],
-      warehouseId: "",
+      branchIds: selectedBranchIds,
+      warehouseId: warehouses.length === 1 ? warehouses[0].id : "",
     }))
   }
 
   function selectDepartments(departmentIds: string[]) {
-    const branchIds = [...new Set(
-      data.departments
-        .filter((department) => departmentIds.includes(department.id))
-        .flatMap((department) => department.branchIds),
-    )]
-    setDraft((current) => ({
-      ...current,
-      departmentIds,
-      branchIds: branchIds.length === 1 ? branchIds : current.branchIds.filter((id) => branchIds.includes(id)),
-      warehouseId: "",
-    }))
+    const branchIds = getBranchIds(departmentIds)
+    setDraft((current) => {
+      const selectedBranchIds = branchIds.length === 1
+        ? branchIds
+        : current.branchIds.filter((id) => branchIds.includes(id))
+      const warehouses = getWarehouses(departmentIds, selectedBranchIds)
+      return {
+        ...current,
+        departmentIds,
+        branchIds: selectedBranchIds,
+        warehouseId: warehouses.length === 1
+          ? warehouses[0].id
+          : warehouses.some((warehouse) => warehouse.id === current.warehouseId)
+            ? current.warehouseId
+            : "",
+      }
+    })
   }
 
   function selectBranches(branchIds: string[]) {
-    const validWarehouses = data.warehouses.filter((warehouse) =>
-      allowedWarehouseIds.has(warehouse.id) && warehouse.branchIds.some((id) => branchIds.includes(id)),
-    )
+    const validWarehouses = getWarehouses(draft.departmentIds, branchIds)
     setDraft((current) => ({
       ...current,
       branchIds,
-      warehouseId: validWarehouses.some((warehouse) => warehouse.id === current.warehouseId)
-        ? current.warehouseId
-        : "",
+      warehouseId: validWarehouses.length === 1
+        ? validWarehouses[0].id
+        : validWarehouses.some((warehouse) => warehouse.id === current.warehouseId)
+          ? current.warehouseId
+          : "",
     }))
   }
 
@@ -183,7 +351,7 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
   }
 
   function publishOrder() {
-    const order = addOrder({
+    const payload = {
       type: draft.type,
       applicantId: draft.applicantId,
       departmentIds: draft.departmentIds,
@@ -194,8 +362,18 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
       urgency: urgency.key,
       lines: draft.lines.map((line) => ({ ...line, quantity: Number(line.quantity) })),
       comment: draft.comment,
-      attachmentNames: draft.files.map((file) => file.name),
-    })
+      attachmentNames: [
+        ...draft.existingAttachmentNames,
+        ...draft.files.map((file) => file.name),
+      ],
+    }
+    const order = revisionOrder
+      ? resubmitOrder(revisionOrder.id, payload)
+      : addOrder(payload)
+    if (!order) {
+      setError(revisionCopy(lang).unableToResubmit)
+      return
+    }
     setPublishedOrderNumber(order.number)
   }
 
@@ -206,8 +384,12 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
           <div className="mx-auto mb-4 w-fit rounded-full bg-emerald-500/10 p-4 text-emerald-600">
             <CheckCircle2Icon className="size-10" />
           </div>
-          <h1 className="text-2xl font-semibold">{messages.orderPublished}</h1>
-          <p className="mt-2 text-muted-foreground">{messages.orderPublishedDescription}</p>
+          <h1 className="text-2xl font-semibold">
+            {revisionOrder ? revisionCopy(lang).resubmitted : messages.orderPublished}
+          </h1>
+          <p className="mt-2 text-muted-foreground">
+            {revisionOrder ? revisionCopy(lang).resubmittedDescription : messages.orderPublishedDescription}
+          </p>
           <Badge variant="outline" className="mt-4">{publishedOrderNumber}</Badge>
           <div className="mt-6">
             <Link href={`/${lang}/orders`} className={buttonVariants()}>{messages.orderList}</Link>
@@ -223,7 +405,9 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
             <p className="text-sm font-medium text-muted-foreground">{messages.orders}</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">{messages.createOrder}</h1>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">
+              {revisionOrder ? revisionCopy(lang).editTitle : messages.createOrder}
+            </h1>
             <p className="mt-2 text-sm text-muted-foreground">{step} / 3 {messages.stepOf}</p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -236,6 +420,12 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
           <OrderStepper step={step} messages={messages} />
         </div>
       </div>
+
+      {legacyApplicantAdjusted ? (
+        <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm" role="status">
+          {revisionCopy(lang).supervisorAdjusted}
+        </p>
+      ) : null}
 
       {step === 1 ? (
         <section className="space-y-6 rounded-2xl border bg-card p-5 shadow-sm md:p-7">
@@ -250,48 +440,88 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
                 ))}
               </div>
             </Field>
-            <Field label={messages.applicant}>
-              <SearchableSelect
-                options={data.users.map((user) => ({ value: user.id, label: user.fullName, searchValue: `${user.fullName} ${user.username} ${user.phoneNumber}` }))}
-                value={draft.applicantId}
-                onChange={selectApplicant}
-                placeholder={messages.selectApplicant}
-                searchPlaceholder={messages.searchOptions}
-                emptyText={messages.noOptions}
-                ariaLabel={messages.applicant}
-              />
-            </Field>
+            {isDepartmentSupervisor ? (
+              <Field label={messages.applicant} hint={supervisorApplicantHint(lang)}>
+                <div
+                  className="flex min-h-9 items-center rounded-lg border bg-muted/35 px-3 text-sm font-medium"
+                  aria-label={messages.applicant}
+                >
+                  {currentUser?.fullName ?? "—"}
+                </div>
+              </Field>
+            ) : (
+              <Field
+                label={messages.applicant}
+                hint={assistantCreatesForSupervisors ? supervisorOnlyHint(lang) : undefined}
+              >
+                <SearchableSelect
+                  options={availableApplicants.map((user) => ({ value: user.id, label: user.fullName, searchValue: `${user.fullName} ${user.username} ${user.phoneNumber}` }))}
+                  value={draft.applicantId}
+                  onChange={selectApplicant}
+                  placeholder={messages.selectApplicant}
+                  searchPlaceholder={messages.searchOptions}
+                  emptyText={messages.noOptions}
+                  ariaLabel={messages.applicant}
+                />
+              </Field>
+            )}
             <Field label={messages.departmentsField} hint={availableDepartments.length === 1 ? messages.singleAutoSelected : undefined}>
-              <SearchableMultiSelect
-                options={availableDepartments.map((department) => ({ value: department.id, label: getLocalizedTitle(department, lang) }))}
-                value={draft.departmentIds}
-                onChange={selectDepartments}
-                placeholder={messages.selectOption}
-                searchPlaceholder={messages.searchOptions}
-                emptyText={messages.noOptions}
-                selectedText={messages.selectedCount}
-                clearText={messages.clearSelection}
-                doneText={messages.done}
-                ariaLabel={messages.departmentsField}
-                disabled={!applicant || availableDepartments.length === 1}
-              />
+              {isDepartmentSupervisor ? (
+                <SearchableSelect
+                  options={availableDepartments.map((department) => ({ value: department.id, label: getLocalizedTitle(department, lang) }))}
+                  value={draft.departmentIds[0] ?? ""}
+                  onChange={(value) => selectDepartments([value])}
+                  placeholder={messages.selectOption}
+                  searchPlaceholder={messages.searchOptions}
+                  emptyText={messages.noOptions}
+                  ariaLabel={messages.departmentsField}
+                  disabled={!applicant || availableDepartments.length === 1}
+                />
+              ) : (
+                <SearchableMultiSelect
+                  options={availableDepartments.map((department) => ({ value: department.id, label: getLocalizedTitle(department, lang) }))}
+                  value={draft.departmentIds}
+                  onChange={selectDepartments}
+                  placeholder={messages.selectOption}
+                  searchPlaceholder={messages.searchOptions}
+                  emptyText={messages.noOptions}
+                  selectedText={messages.selectedCount}
+                  clearText={messages.clearSelection}
+                  doneText={messages.done}
+                  ariaLabel={messages.departmentsField}
+                  disabled={!applicant || availableDepartments.length === 1}
+                />
+              )}
             </Field>
             <Field label={messages.branchesField} hint={availableBranches.length === 1 ? messages.singleAutoSelected : undefined}>
-              <SearchableMultiSelect
-                options={availableBranches.map((branch) => ({ value: branch.id, label: getLocalizedTitle(branch, lang) }))}
-                value={draft.branchIds}
-                onChange={selectBranches}
-                placeholder={messages.selectOption}
-                searchPlaceholder={messages.searchOptions}
-                emptyText={messages.noOptions}
-                selectedText={messages.selectedCount}
-                clearText={messages.clearSelection}
-                doneText={messages.done}
-                ariaLabel={messages.branchesField}
-                disabled={!draft.departmentIds.length || availableBranches.length === 1}
-              />
+              {isDepartmentSupervisor ? (
+                <SearchableSelect
+                  options={availableBranches.map((branch) => ({ value: branch.id, label: getLocalizedTitle(branch, lang) }))}
+                  value={draft.branchIds[0] ?? ""}
+                  onChange={(value) => selectBranches([value])}
+                  placeholder={messages.selectOption}
+                  searchPlaceholder={messages.searchOptions}
+                  emptyText={messages.noOptions}
+                  ariaLabel={messages.branchesField}
+                  disabled={!draft.departmentIds.length || availableBranches.length === 1}
+                />
+              ) : (
+                <SearchableMultiSelect
+                  options={availableBranches.map((branch) => ({ value: branch.id, label: getLocalizedTitle(branch, lang) }))}
+                  value={draft.branchIds}
+                  onChange={selectBranches}
+                  placeholder={messages.selectOption}
+                  searchPlaceholder={messages.searchOptions}
+                  emptyText={messages.noOptions}
+                  selectedText={messages.selectedCount}
+                  clearText={messages.clearSelection}
+                  doneText={messages.done}
+                  ariaLabel={messages.branchesField}
+                  disabled={!draft.departmentIds.length || availableBranches.length === 1}
+                />
+              )}
             </Field>
-            <Field label={messages.warehouse}>
+            <Field label={messages.warehouse} hint={availableWarehouses.length === 1 ? messages.singleAutoSelected : undefined}>
               <SearchableSelect
                 options={availableWarehouses.map((warehouse) => ({ value: warehouse.id, label: getLocalizedTitle(warehouse, lang) }))}
                 value={draft.warehouseId}
@@ -300,7 +530,7 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
                 searchPlaceholder={messages.searchOptions}
                 emptyText={messages.noOptions}
                 ariaLabel={messages.warehouse}
-                disabled={!draft.branchIds.length}
+                disabled={!draft.branchIds.length || availableWarehouses.length === 1}
               />
             </Field>
           </div>
@@ -391,6 +621,17 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
                 </Label>
                 <Input id="order-files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" className="sr-only" onChange={(event) => updateDraft("files", [...draft.files, ...Array.from(event.target.files ?? [])])} />
                 <div className="flex flex-wrap gap-2">
+                  {draft.existingAttachmentNames.map((name) => (
+                    <Badge key={`existing-${name}`} variant="outline" className="gap-1.5 py-1">
+                      <FileIcon />
+                      <span className="max-w-40 truncate">{name}</span>
+                      <button
+                        type="button"
+                        aria-label={`${messages.delete}: ${name}`}
+                        onClick={() => updateDraft("existingAttachmentNames", draft.existingAttachmentNames.filter((item) => item !== name))}
+                      >×</button>
+                    </Badge>
+                  ))}
                   {draft.files.map((file, index) => (
                     <Badge key={`${file.name}-${index}`} variant="secondary" className="gap-1.5 py-1">
                       {file.type.startsWith("image/") ? <ImageIcon /> : <FileIcon />}
@@ -424,7 +665,7 @@ export function OrderWizard({ lang, messages, today }: { lang: Locale; messages:
         ) : (
           <Button type="button" onClick={publishOrder}>
             <SendIcon />
-            {messages.sendOrder}
+            {revisionOrder ? revisionCopy(lang).resend : messages.sendOrder}
           </Button>
         )}
       </div>
@@ -474,6 +715,52 @@ function Field({ label, hint, htmlFor, children }: { label: string; hint?: strin
       {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   )
+}
+
+function supervisorOnlyHint(lang: Locale) {
+  return lang === "ru"
+    ? "Ассистент может создать заявку только для руководителя отдела."
+    : lang === "tr"
+      ? "Asistan yalnızca bir bölüm yöneticisi için talep oluşturabilir."
+      : "Assistant buyurtmani faqat bo‘lim rahbari uchun yaratishi mumkin."
+}
+
+function supervisorApplicantHint(lang: Locale) {
+  return lang === "ru"
+    ? "Вы автоматически указаны как заявитель."
+    : lang === "tr"
+      ? "Talep sahibi olarak otomatik atandınız."
+      : "Siz avtomatik ravishda arizachi sifatida belgilandingiz."
+}
+
+function revisionCopy(lang: Locale) {
+  if (lang === "ru") return {
+    loading: "Загрузка заявки…",
+    editTitle: "Изменить отклонённую заявку",
+    resend: "Отправить снова",
+    resubmitted: "Заявка отправлена повторно",
+    resubmittedDescription: "Изменённая заявка снова отправлена руководителю отдела.",
+    unableToResubmit: "Не удалось отправить заявку повторно. Обновите страницу и попробуйте ещё раз.",
+    supervisorAdjusted: "Для этой старой заявки заявитель автоматически изменён на руководителя выбранного отдела. Проверьте данные и отправьте заявку снова.",
+  }
+  if (lang === "tr") return {
+    loading: "Talep yükleniyor…",
+    editTitle: "Reddedilen talebi düzenle",
+    resend: "Yeniden gönder",
+    resubmitted: "Talep yeniden gönderildi",
+    resubmittedDescription: "Düzenlenen talep bölüm yöneticisine tekrar gönderildi.",
+    unableToResubmit: "Talep yeniden gönderilemedi. Sayfayı yenileyip tekrar deneyin.",
+    supervisorAdjusted: "Bu eski talebin sahibi otomatik olarak seçili bölümün yöneticisiyle değiştirildi. Bilgileri kontrol edip yeniden gönderin.",
+  }
+  return {
+    loading: "Buyurtma yuklanmoqda…",
+    editTitle: "Rad etilgan buyurtmani tahrirlash",
+    resend: "Qayta yuborish",
+    resubmitted: "Buyurtma qayta yuborildi",
+    resubmittedDescription: "Tahrirlangan buyurtma bo‘lim rahbariga qayta yuborildi.",
+    unableToResubmit: "Buyurtmani qayta yuborib bo‘lmadi. Sahifani yangilab, qayta urinib ko‘ring.",
+    supervisorAdjusted: "Ushbu eski buyurtmaning arizachisi avtomatik ravishda tanlangan bo‘lim rahbariga o‘zgartirildi. Ma’lumotlarni tekshirib, qayta yuboring.",
+  }
 }
 
 function getUrgency(date: string, todayDate: string, messages: Messages) {
@@ -537,7 +824,13 @@ function ReviewOrder({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <ReviewValue label={messages.comment} value={draft.comment || "—"} />
-        <ReviewValue label={messages.attachments} value={draft.files.map((file) => file.name).join(", ") || "—"} />
+        <ReviewValue
+          label={messages.attachments}
+          value={[
+            ...draft.existingAttachmentNames,
+            ...draft.files.map((file) => file.name),
+          ].join(", ") || "—"}
+        />
       </div>
     </section>
   )

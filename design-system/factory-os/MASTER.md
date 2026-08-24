@@ -19,18 +19,20 @@
 
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#334155` | `--color-primary` |
+| Primary / Electric Blue | `#0066FF` | `--color-primary` |
 | On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#475569` | `--color-secondary` |
-| Accent/CTA | `#059669` | `--color-accent` |
-| Background | `#F8FAFC` | `--color-background` |
-| Foreground | `#0F172A` | `--color-foreground` |
-| Muted | `#F2F3F4` | `--color-muted` |
-| Border | `#E6E8EA` | `--color-border` |
+| Secondary Surface | `#FFFFFF` | `--color-secondary` |
+| On Secondary | `#09090B` | `--color-secondary-foreground` |
+| Hover Tint | `rgba(0, 102, 255, 0.10)` | `--color-accent` |
+| On Hover Tint | `#09090B` | `--color-accent-foreground` |
+| Background | `#FFFFFF` | `--color-background` |
+| Foreground | `#09090B` | `--color-foreground` |
+| Muted | `#F4F7FB` | `--color-muted` |
+| Border | `#DCE5F2` | `--color-border` |
 | Destructive | `#DC2626` | `--color-destructive` |
-| Ring | `#334155` | `--color-ring` |
+| Ring | `#0066FF` | `--color-ring` |
 
-**Color Notes:** Industrial slate + stock green
+**Color Notes:** White is used for all page, card, popover, and sidebar surfaces. Electric blue is reserved for buttons, active navigation, selected controls, and focus states; text on solid electric blue is always white. Hover states use electric blue at 10% opacity with black text. Regular text is black. Green/red remain semantic status colors only.
 
 ### Typography
 
@@ -76,7 +78,7 @@
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #059669;
+  background: #0066FF;
   color: white;
   padding: 12px 24px;
   border-radius: 8px;
@@ -93,8 +95,8 @@
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #334155;
-  border: 2px solid #334155;
+  color: #09090B;
+  border: 2px solid #09090B;
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -107,7 +109,7 @@
 
 ```css
 .card {
-  background: #F8FAFC;
+  background: #FFFFFF;
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-md);
@@ -133,9 +135,9 @@
 }
 
 .input:focus {
-  border-color: #334155;
+  border-color: #0066FF;
   outline: none;
-  box-shadow: 0 0 0 3px #33415520;
+  box-shadow: 0 0 0 3px #0066FF26;
 }
 ```
 

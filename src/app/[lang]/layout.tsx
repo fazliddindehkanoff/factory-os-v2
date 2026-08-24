@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { SettingsProvider } from "@/components/settings/settings-provider"
 import { OrdersProvider } from "@/components/orders/orders-provider"
 import { ProcurementProvider } from "@/components/procurement/procurement-provider"
+import { getSessionUser } from "@/lib/auth/session"
 import { isLocale, locales } from "@/lib/i18n"
 
 import "../globals.css"
@@ -39,6 +40,7 @@ export default async function LocaleLayout({
   const { lang } = await params
 
   if (!isLocale(lang)) notFound()
+  const session = await getSessionUser()
 
   return (
     <html
@@ -47,7 +49,7 @@ export default async function LocaleLayout({
     >
       <body className="flex min-h-full flex-col">
         <TooltipProvider>
-          <SettingsProvider>
+          <SettingsProvider initialCurrentUserId={session?.userId}>
             <OrdersProvider>
               <ProcurementProvider>{children}</ProcurementProvider>
             </OrdersProvider>

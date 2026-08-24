@@ -2,7 +2,7 @@
 
 import * as React from "react"
 
-import { systemRoleTemplates } from "@/lib/rbac"
+import { hasPermission, systemRoleTemplates, type PermissionCode } from "@/lib/rbac"
 import type { LocalizedTitle, SettingsData, SettingsSection } from "@/lib/settings"
 
 const systemRoles: SettingsData["roles"] = systemRoleTemplates.map((role) => ({
@@ -29,6 +29,24 @@ const initialSettingsData: SettingsData = {
       titleUz: "Operator",
       titleRu: "Оператор",
       titleTr: "Operatör",
+    },
+    {
+      id: "position-supervisor",
+      titleUz: "Bo‘lim rahbari",
+      titleRu: "Руководитель отдела",
+      titleTr: "Bölüm yöneticisi",
+    },
+    {
+      id: "position-chief-engineer",
+      titleUz: "Bosh muhandis",
+      titleRu: "Главный инженер",
+      titleTr: "Baş mühendis",
+    },
+    {
+      id: "position-director",
+      titleUz: "Direktor",
+      titleRu: "Директор",
+      titleTr: "Direktör",
     },
   ],
   branches: [
@@ -127,7 +145,7 @@ const initialSettingsData: SettingsData = {
       titleRu: "Основной склад",
       titleTr: "Ana depo",
       branchIds: ["branch-tashkent"],
-      responsibleUserId: "user-admin",
+      responsibleUserId: "user-warehouse",
     },
     {
       id: "warehouse-samarkand",
@@ -135,7 +153,7 @@ const initialSettingsData: SettingsData = {
       titleRu: "Самаркандский склад",
       titleTr: "Semerkant deposu",
       branchIds: ["branch-samarkand"],
-      responsibleUserId: "user-applicant",
+      responsibleUserId: "user-warehouse",
     },
   ],
   departments: [
@@ -180,6 +198,17 @@ const initialSettingsData: SettingsData = {
       roleIds: ["role-requester"],
     },
     {
+      id: "user-supervisor",
+      fullName: "Javlon Mirzayev",
+      positionId: "position-supervisor",
+      username: "javlon.s",
+      password: "••••••••",
+      telegramChatId: "",
+      phoneNumber: "+998 90 111 11 11",
+      departmentIds: ["department-production"],
+      roleIds: ["role-dept_head"],
+    },
+    {
       id: "user-warehouse",
       fullName: "Bekzod Rahimov",
       positionId: "position-operator",
@@ -200,6 +229,39 @@ const initialSettingsData: SettingsData = {
       phoneNumber: "+998 90 333 33 33",
       departmentIds: ["department-procurement"],
       roleIds: ["role-procurement_head"],
+    },
+    {
+      id: "user-chief-engineer",
+      fullName: "Rustam Yuldashev",
+      positionId: "position-chief-engineer",
+      username: "rustam.e",
+      password: "••••••••",
+      telegramChatId: "",
+      phoneNumber: "+998 90 232 32 32",
+      departmentIds: ["department-production"],
+      roleIds: ["role-deputy_director"],
+    },
+    {
+      id: "user-procurement-manager",
+      fullName: "Nodira Ismoilova",
+      positionId: "position-manager",
+      username: "nodira.pm",
+      password: "••••••••",
+      telegramChatId: "",
+      phoneNumber: "+998 90 343 43 43",
+      departmentIds: ["department-procurement"],
+      roleIds: ["role-procurement_manager"],
+    },
+    {
+      id: "user-procurement-specialist-2",
+      fullName: "Akmal Raxmonov",
+      positionId: "position-manager",
+      username: "akmal.proc",
+      password: "••••••••",
+      telegramChatId: "",
+      phoneNumber: "+998 90 353 53 53",
+      departmentIds: ["department-procurement"],
+      roleIds: ["role-procurement_manager"],
     },
     {
       id: "user-finance",
@@ -223,13 +285,23 @@ const initialSettingsData: SettingsData = {
       departmentIds: ["department-production"],
       roleIds: ["role-observer"],
     },
+    {
+      id: "user-director",
+      fullName: "Sardor Ergashev",
+      positionId: "position-director",
+      username: "sardor.d",
+      password: "••••••••",
+      telegramChatId: "",
+      phoneNumber: "+998 90 454 54 54",
+      departmentIds: ["department-production"],
+      roleIds: ["role-director"],
+    },
   ],
 }
 
 type SettingsContextValue = {
   data: SettingsData
   currentUserId: string
-  setCurrentUserId: (id: string) => void
   addRecord: <K extends SettingsSection>(
     section: K,
     record: SettingsData[K][number],
@@ -249,29 +321,33 @@ type SettingsContextValue = {
 
 const SettingsContext = React.createContext<SettingsContextValue | null>(null)
 
-export function SettingsProvider({ children }: { children: React.ReactNode }) {
+export function SettingsProvider({
+  children,
+  initialCurrentUserId = "user-admin",
+}: {
+  children: React.ReactNode
+  initialCurrentUserId?: string
+}) {
   const [data, setData] = React.useState(initialSettingsData)
-  const [currentUserId, setCurrentUserIdState] = React.useState("user-admin")
+  const [currentUserId] = React.useState(initialCurrentUserId)
+  const currentUser = data.users.find((user) => user.id === currentUserId)
+  const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
 
-  React.useEffect(() => {
-    const restorePreview = window.setTimeout(() => {
-      const savedUserId = window.sessionStorage.getItem("factory-os-preview-user")
-      if (savedUserId && initialSettingsData.users.some((user) => user.id === savedUserId)) {
-        setCurrentUserIdState(savedUserId)
-      }
-    }, 0)
-    return () => window.clearTimeout(restorePreview)
-  }, [])
+  function can(permission: PermissionCode) {
+    return hasPermission(currentRoles, permission)
+  }
 
-  function setCurrentUserId(id: string) {
-    setCurrentUserIdState(id)
-    window.sessionStorage.setItem("factory-os-preview-user", id)
+  function canManageSection(section: SettingsSection) {
+    if (section === "roles") return can("roles.manage")
+    if (section === "users") return can("users.manage")
+    return can("settings.manage")
   }
 
   function addRecord<K extends SettingsSection>(
     section: K,
     record: SettingsData[K][number],
   ) {
+    if (!canManageSection(section)) return
     setData((current) => ({
       ...current,
       [section]: [...current[section], record],
@@ -282,6 +358,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     section: K,
     record: SettingsData[K][number],
   ) {
+    if (!canManageSection(section)) return
     setData((current) => ({
       ...current,
       [section]: current[section].map((item) =>
@@ -291,6 +368,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }
 
   function deleteRecord(section: SettingsSection, id: string) {
+    if (!canManageSection(section)) return
     setData((current) => {
       const nextSection = current[section].filter((item) => item.id !== id)
 
@@ -313,6 +391,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     id: string,
     titles: LocalizedTitle,
   ) {
+    if (!canManageSection(section)) return
     setData((current) => ({
       ...current,
       [section]: current[section].map((item) =>
@@ -322,6 +401,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   }
 
   function reorderUnitType(activeId: string, overId: string) {
+    if (!can("settings.manage")) return
     setData((current) => {
       const units = [...current["unit-types"]].sort((a, b) => a.order - b.order)
       const currentIndex = units.findIndex((item) => item.id === activeId)
@@ -343,7 +423,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SettingsContext.Provider
-      value={{ data, currentUserId, setCurrentUserId, addRecord, updateRecord, deleteRecord, updateLocalizedTitles, reorderUnitType }}
+      value={{ data, currentUserId, addRecord, updateRecord, deleteRecord, updateLocalizedTitles, reorderUnitType }}
     >
       {children}
     </SettingsContext.Provider>

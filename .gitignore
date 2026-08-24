@@ -23,6 +23,12 @@ pnpm-debug.log*
 .playwright-cli
 /output/playwright
 
+# Local SQLite databases
+/data/*.db
+/data/*.db-*
+/data/*.sqlite
+/data/*.sqlite-*
+
 # TypeScript and editor files
 *.tsbuildinfo
 .DS_Store
