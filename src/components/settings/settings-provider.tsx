@@ -329,13 +329,14 @@ type SettingsContextValue = {
   ) => void
   reorderUnitType: (activeId: string, overId: string) => void
   replaceProducts: (products: Product[]) => void
+  mergeProduct: (product: Product) => void
 }
 
 const SettingsContext = React.createContext<SettingsContextValue | null>(null)
 
 export function SettingsProvider({
   children,
-  initialCurrentUserId = "user-admin",
+  initialCurrentUserId = "",
   initialProducts,
 }: {
   children: React.ReactNode
@@ -346,7 +347,7 @@ export function SettingsProvider({
     ...initialSettingsData,
     products: initialProducts ?? initialSettingsData.products,
   }))
-  const [currentUserId] = React.useState(initialCurrentUserId)
+  const currentUserId = initialCurrentUserId
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
 
@@ -443,6 +444,14 @@ export function SettingsProvider({
     setData((current) => ({ ...current, products: nextProducts }))
   }
 
+  function mergeProduct(product: Product) {
+    setData((current) => ({
+      ...current,
+      products: [...current.products.filter((item) => item.id !== product.id), product]
+        .sort((left, right) => left.code.localeCompare(right.code)),
+    }))
+  }
+
   return (
     <SettingsContext.Provider
       value={{
@@ -454,6 +463,7 @@ export function SettingsProvider({
         updateLocalizedTitles,
         reorderUnitType,
         replaceProducts,
+        mergeProduct,
       }}
     >
       {children}

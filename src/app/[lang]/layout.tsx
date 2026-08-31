@@ -61,7 +61,11 @@ export default async function LocaleLayout({
     >
       <body className="flex min-h-full flex-col">
         <TooltipProvider>
-          <SettingsProvider initialCurrentUserId={session?.userId} initialProducts={initialProducts}>
+          <SettingsProvider
+            key={session?.userId ?? "anonymous"}
+            initialCurrentUserId={session?.userId}
+            initialProducts={initialProducts}
+          >
             <OrdersProvider>
               <ProcurementProvider>{children}</ProcurementProvider>
             </OrdersProvider>

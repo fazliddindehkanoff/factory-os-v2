@@ -8,8 +8,10 @@ import {
   CheckIcon,
   CircleCheckBigIcon,
   Clock3Icon,
+  DownloadIcon,
   FilterIcon,
   ListChecksIcon,
+  LoaderCircleIcon,
   PlusIcon,
   SearchIcon,
   Trash2Icon,
@@ -42,6 +44,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { Locale, Messages } from "@/lib/i18n";
+import { downloadOrderAttachment } from "@/lib/order-attachments";
 import {
   canUserViewRejectedOrder,
   isOrderSuccessfullyClosed,
@@ -734,6 +737,8 @@ function OrderDetailsDialog({
         order.lines.map((line) => [line.id, line.availableQuantity ?? 0]),
       ),
   );
+  const [downloadingAttachmentId, setDownloadingAttachmentId] = React.useState<string | null>(null);
+  const [attachmentError, setAttachmentError] = React.useState("");
   const applicant = data.users.find((user) => user.id === order.applicantId);
   const creator = data.users.find((user) => user.id === order.createdByUserId);
   const waitingFor = data.users.find(
@@ -765,6 +770,20 @@ function OrderDetailsDialog({
     "procurement_order",
     "warehouse_receipt",
   ].includes(order.currentStep);
+
+  async function downloadAttachment(attachment: NonNullable<OrderRecord["attachments"]>[number]) {
+    setAttachmentError("");
+    setDownloadingAttachmentId(attachment.id);
+    try {
+      if (!await downloadOrderAttachment(attachment)) {
+        setAttachmentError(messages.attachmentUnavailable);
+      }
+    } catch {
+      setAttachmentError(messages.attachmentDownloadFailed);
+    } finally {
+      setDownloadingAttachmentId(null);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -938,17 +957,35 @@ function OrderDetailsDialog({
           </div>
           <div>
             <h3 className="text-sm font-semibold">{messages.attachments}</h3>
-            <ul className="mt-2 space-y-1 rounded-xl border bg-muted/20 p-3 text-sm">
+            <ul className="mt-2 space-y-2 rounded-xl border bg-muted/20 p-3 text-sm">
               {order.attachmentNames.length ? (
-                order.attachmentNames.map((name) => (
-                  <li key={name} className="break-all">
-                    {name}
-                  </li>
-                ))
+                order.attachmentNames.map((name, index) => {
+                  const attachment = order.attachments?.find((item) => item.name === name)
+                  const downloading = attachment?.id === downloadingAttachmentId
+                  return (
+                    <li key={`${name}-${index}`} className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-background/70 px-3 py-2">
+                      <span className="min-w-0 flex-1 break-all">{name}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={!attachment || downloading}
+                        title={attachment ? messages.downloadFile : messages.attachmentUnavailable}
+                        aria-label={`${messages.downloadFile}: ${name}`}
+                        onClick={() => { if (attachment) void downloadAttachment(attachment) }}
+                      >
+                        {downloading ? <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" /> : <DownloadIcon />}
+                        {messages.downloadFile}
+                      </Button>
+                    </li>
+                  )
+                })
               ) : (
                 <li className="text-muted-foreground">—</li>
               )}
             </ul>
+            {attachmentError ? <p role="alert" className="mt-2 text-xs text-destructive">{attachmentError}</p> : null}
           </div>
         </section>
 

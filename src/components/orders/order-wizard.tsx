@@ -8,6 +8,7 @@ import {
   CheckCircle2Icon,
   FileIcon,
   ImageIcon,
+  LoaderCircleIcon,
   PaperclipIcon,
   PlusIcon,
   SendIcon,
@@ -22,12 +23,21 @@ import { useSettings } from "@/components/settings/settings-provider"
 import { useOrders } from "@/components/orders/orders-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
-import type { OrderRecord } from "@/lib/orders"
-import { getLocalizedTitle } from "@/lib/settings"
+import { saveOrderAttachments } from "@/lib/order-attachments"
+import type { OrderAttachment, OrderRecord } from "@/lib/orders"
+import { getLocalizedTitle, type Product } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
 type OrderLine = {
@@ -49,6 +59,7 @@ type OrderDraft = {
   comment: string
   files: File[]
   existingAttachmentNames: string[]
+  existingAttachments: OrderAttachment[]
 }
 
 const emptyLine = (): OrderLine => ({
@@ -109,7 +120,7 @@ function OrderWizardForm({
   today: string
   revisionOrder?: OrderRecord
 }) {
-  const { data } = useSettings()
+  const { data, mergeProduct } = useSettings()
   const { addOrder, resubmitOrder } = useOrders()
   const { can, currentUser } = useAuthorization()
   const assistantCreatesForSupervisors = currentUser?.roleIds.includes("role-requester") ?? false
@@ -178,6 +189,8 @@ function OrderWizardForm({
   const [step, setStep] = React.useState(1)
   const [error, setError] = React.useState("")
   const [publishedOrderNumber, setPublishedOrderNumber] = React.useState("")
+  const [publishing, setPublishing] = React.useState(false)
+  const [productLineId, setProductLineId] = React.useState<string | null>(null)
   const [draft, setDraft] = React.useState<OrderDraft>(() =>
     revisionOrder
       ? {
@@ -197,6 +210,7 @@ function OrderWizardForm({
           comment: revisionOrder.comment,
           files: [],
           existingAttachmentNames: revisionOrder.attachmentNames,
+          existingAttachments: revisionOrder.attachments ?? [],
         }
       : {
           type: "material",
@@ -210,6 +224,7 @@ function OrderWizardForm({
           comment: "",
           files: [],
           existingAttachmentNames: [],
+          existingAttachments: [],
         },
   )
 
@@ -331,6 +346,12 @@ function OrderWizardForm({
     }))
   }
 
+  function selectCreatedProduct(product: Product) {
+    mergeProduct(product)
+    if (productLineId) updateLine(productLineId, "productId", product.id)
+    setProductLineId(null)
+  }
+
   function goNext() {
     setError("")
     if (step === 1) {
@@ -351,7 +372,18 @@ function OrderWizardForm({
     }
   }
 
-  function publishOrder() {
+  async function publishOrder() {
+    setError("")
+    setPublishing(true)
+    let uploadedAttachments: OrderAttachment[]
+    try {
+      uploadedAttachments = await saveOrderAttachments(draft.files)
+    } catch {
+      setError(messages.attachmentSaveFailed)
+      setPublishing(false)
+      return
+    }
+
     const payload = {
       type: draft.type,
       applicantId: draft.applicantId,
@@ -367,15 +399,25 @@ function OrderWizardForm({
         ...draft.existingAttachmentNames,
         ...draft.files.map((file) => file.name),
       ],
+      attachments: [...draft.existingAttachments, ...uploadedAttachments],
     }
-    const order = revisionOrder
-      ? resubmitOrder(revisionOrder.id, payload)
-      : addOrder(payload)
+    let order: OrderRecord | undefined
+    try {
+      order = revisionOrder
+        ? resubmitOrder(revisionOrder.id, payload)
+        : addOrder(payload)
+    } catch {
+      setError(revisionCopy(lang).unableToResubmit)
+      setPublishing(false)
+      return
+    }
     if (!order) {
       setError(revisionCopy(lang).unableToResubmit)
+      setPublishing(false)
       return
     }
     setPublishedOrderNumber(order.number)
+    setPublishing(false)
   }
 
   if (publishedOrderNumber) {
@@ -587,33 +629,33 @@ function OrderWizardForm({
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="font-semibold">{messages.orderPositions}</h2>
-              <Button type="button" variant="outline" size="sm" onClick={() => updateDraft("lines", [...draft.lines, emptyLine()])}>
-                <PlusIcon />
-                {messages.addPosition}
-              </Button>
-            </div>
+            <h2 className="font-semibold">{messages.orderPositions}</h2>
             <div className="space-y-3">
               {draft.lines.map((line, index) => {
                 const product = data.products.find((candidate) => candidate.id === line.productId)
                 const unit = data["unit-types"].find((candidate) => candidate.id === product?.unitTypeId)
                 return (
-                  <div key={line.id} className="grid gap-3 rounded-xl border bg-muted/25 p-4 shadow-xs md:grid-cols-[minmax(14rem,2fr)_minmax(7rem,.7fr)_minmax(8rem,.8fr)_minmax(12rem,1.4fr)_auto] md:items-end">
+                  <div key={line.id} className="grid gap-3 rounded-xl border bg-muted/25 p-4 shadow-xs lg:grid-cols-[minmax(14rem,2fr)_minmax(7rem,.7fr)_minmax(8rem,.8fr)_minmax(12rem,1.4fr)_auto] lg:items-start">
                     <Field label={`${index + 1}. ${messages.product}`}>
-                      <SearchableSelect
-                        options={data.products.map((item) => ({
-                          value: item.id,
-                          label: `${item.code} · ${getLocalizedTitle(item, lang)}`,
-                          searchValue: `${item.code} ${item.titleUz} ${item.titleRu} ${item.titleTr}`,
-                        }))}
-                        value={line.productId}
-                        onChange={(value) => updateLine(line.id, "productId", value)}
-                        placeholder={messages.selectOption}
-                        searchPlaceholder={messages.productSearch}
-                        emptyText={messages.noProducts}
-                        ariaLabel={`${messages.product} ${index + 1}`}
-                      />
+                      <div className="space-y-2">
+                        <SearchableSelect
+                          options={data.products.map((item) => ({
+                            value: item.id,
+                            label: `${item.code} · ${getLocalizedTitle(item, lang)}`,
+                            searchValue: `${item.code} ${item.titleUz} ${item.titleRu} ${item.titleTr}`,
+                          }))}
+                          value={line.productId}
+                          onChange={(value) => updateLine(line.id, "productId", value)}
+                          placeholder={messages.selectOption}
+                          searchPlaceholder={messages.productSearch}
+                          emptyText={messages.noProducts}
+                          ariaLabel={`${messages.product} ${index + 1}`}
+                        />
+                        <Button type="button" variant="ghost" size="sm" className="h-auto px-1 py-1 text-primary" onClick={() => setProductLineId(line.id)}>
+                          <PlusIcon />
+                          {messages.createProduct}
+                        </Button>
+                      </div>
                     </Field>
                     <Field label={messages.quantity} htmlFor={`quantity-${line.id}`}>
                       <Input id={`quantity-${line.id}`} type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => updateLine(line.id, "quantity", event.target.value)} />
@@ -622,14 +664,24 @@ function OrderWizardForm({
                       <Input disabled value={unit ? `${getLocalizedTitle(unit, lang)} (${unit.code})` : "—"} />
                     </Field>
                     <Field label={messages.note} htmlFor={`note-${line.id}`}>
-                      <Input id={`note-${line.id}`} value={line.note} onChange={(event) => updateLine(line.id, "note", event.target.value)} />
+                      <Textarea id={`note-${line.id}`} rows={3} value={line.note} onChange={(event) => updateLine(line.id, "note", event.target.value)} />
                     </Field>
-                    <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" aria-label={messages.removePosition} title={messages.removePosition} onClick={() => removeLine(line.id)}>
+                    <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive lg:mt-6" aria-label={messages.removePosition} title={messages.removePosition} onClick={() => removeLine(line.id)}>
                       <Trash2Icon />
                     </Button>
                   </div>
                 )
               })}
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="min-h-12 w-full border-dashed"
+                onClick={() => updateDraft("lines", [...draft.lines, emptyLine()])}
+              >
+                <PlusIcon />
+                {messages.addPosition}
+              </Button>
             </div>
           </div>
 
@@ -645,14 +697,18 @@ function OrderWizardForm({
                 </Label>
                 <Input id="order-files" type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" className="sr-only" onChange={(event) => updateDraft("files", [...draft.files, ...Array.from(event.target.files ?? [])])} />
                 <div className="flex flex-wrap gap-2">
-                  {draft.existingAttachmentNames.map((name) => (
-                    <Badge key={`existing-${name}`} variant="outline" className="gap-1.5 py-1">
+                  {draft.existingAttachmentNames.map((name, index) => (
+                    <Badge key={`existing-${name}-${index}`} variant="outline" className="gap-1.5 py-1">
                       <FileIcon />
                       <span className="max-w-40 truncate">{name}</span>
                       <button
                         type="button"
                         aria-label={`${messages.delete}: ${name}`}
-                        onClick={() => updateDraft("existingAttachmentNames", draft.existingAttachmentNames.filter((item) => item !== name))}
+                        onClick={() => setDraft((current) => ({
+                          ...current,
+                          existingAttachmentNames: current.existingAttachmentNames.filter((_, itemIndex) => itemIndex !== index),
+                          existingAttachments: current.existingAttachments.filter((attachment) => attachment.name !== name),
+                        }))}
                       >×</button>
                     </Badge>
                   ))}
@@ -687,13 +743,142 @@ function OrderWizardForm({
             <ArrowRightIcon />
           </Button>
         ) : (
-          <Button type="button" onClick={publishOrder}>
-            <SendIcon />
+          <Button type="button" onClick={publishOrder} disabled={publishing}>
+            {publishing ? <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" /> : <SendIcon />}
             {revisionOrder ? revisionCopy(lang).resend : messages.sendOrder}
           </Button>
         )}
       </div>
+
+      {productLineId ? (
+        <CreateProductDialog
+          lang={lang}
+          messages={messages}
+          categories={data["product-categories"]}
+          units={data["unit-types"]}
+          onOpenChange={(open) => { if (!open) setProductLineId(null) }}
+          onCreated={selectCreatedProduct}
+        />
+      ) : null}
     </div>
+  )
+}
+
+function CreateProductDialog({
+  lang,
+  messages,
+  categories,
+  units,
+  onOpenChange,
+  onCreated,
+}: {
+  lang: Locale
+  messages: Messages
+  categories: ReturnType<typeof useSettings>["data"]["product-categories"]
+  units: ReturnType<typeof useSettings>["data"]["unit-types"]
+  onOpenChange: (open: boolean) => void
+  onCreated: (product: Product) => void
+}) {
+  const [form, setForm] = React.useState({
+    code: "",
+    categoryId: "",
+    unitTypeId: "",
+    titleUz: "",
+    titleRu: "",
+    titleTr: "",
+  })
+  const [error, setError] = React.useState("")
+  const [saving, setSaving] = React.useState(false)
+
+  function updateField(name: keyof typeof form, value: string) {
+    setForm((current) => ({ ...current, [name]: value }))
+  }
+
+  async function createProduct(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError("")
+    if (!form.code.trim() || !form.categoryId || !form.unitTypeId) {
+      setError(messages.requiredFields)
+      return
+    }
+    if (![form.titleUz, form.titleRu, form.titleTr].some((title) => title.trim())) {
+      setError(messages.oneTitleRequired)
+      return
+    }
+
+    setSaving(true)
+    try {
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+      const result = await response.json() as { product?: Product; error?: string }
+      if (!response.ok || !result.product) {
+        setError(result.error === "product-code-exists" ? messages.productCodeExists : messages.productCreateFailed)
+        return
+      }
+      onCreated(result.product)
+    } catch {
+      setError(messages.productCreateFailed)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-2xl">
+        <form onSubmit={createProduct}>
+          <DialogHeader>
+            <DialogTitle>{messages.createProduct}</DialogTitle>
+            <DialogDescription>{messages.createProductDescription}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-5 sm:grid-cols-2">
+            <Field label={messages.code} htmlFor="new-product-code">
+              <Input id="new-product-code" value={form.code} onChange={(event) => updateField("code", event.target.value)} autoCapitalize="characters" autoFocus />
+            </Field>
+            <Field label={messages.category}>
+              <SearchableSelect
+                options={categories.map((category) => ({ value: category.id, label: getLocalizedTitle(category, lang) }))}
+                value={form.categoryId}
+                onChange={(value) => updateField("categoryId", value)}
+                placeholder={messages.selectOption}
+                searchPlaceholder={messages.searchOptions}
+                emptyText={messages.noOptions}
+                ariaLabel={messages.category}
+              />
+            </Field>
+            <Field label={messages.unitType}>
+              <SearchableSelect
+                options={units.map((unit) => ({ value: unit.id, label: `${getLocalizedTitle(unit, lang)} (${unit.code})` }))}
+                value={form.unitTypeId}
+                onChange={(value) => updateField("unitTypeId", value)}
+                placeholder={messages.selectOption}
+                searchPlaceholder={messages.searchOptions}
+                emptyText={messages.noOptions}
+                ariaLabel={messages.unitType}
+              />
+            </Field>
+            <div className="hidden sm:block" />
+            <Field label={messages.titleUz} htmlFor="new-product-title-uz">
+              <Input id="new-product-title-uz" value={form.titleUz} onChange={(event) => updateField("titleUz", event.target.value)} />
+            </Field>
+            <Field label={messages.titleRu} htmlFor="new-product-title-ru">
+              <Input id="new-product-title-ru" value={form.titleRu} onChange={(event) => updateField("titleRu", event.target.value)} />
+            </Field>
+            <Field label={messages.titleTr} htmlFor="new-product-title-tr">
+              <Input id="new-product-title-tr" value={form.titleTr} onChange={(event) => updateField("titleTr", event.target.value)} />
+            </Field>
+          </div>
+          {error ? <p role="alert" className="pb-4 text-sm text-destructive">{error}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>{messages.cancel}</Button>
+            <Button type="submit" disabled={saving}>{messages.save}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

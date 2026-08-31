@@ -53,6 +53,13 @@ export type OrderLineRecord = {
   fulfillmentStatus?: FulfillmentStatus
 }
 
+export type OrderAttachment = {
+  id: string
+  name: string
+  type: string
+  size: number
+}
+
 export type WorkflowNotification = {
   id: string
   userId: string
@@ -162,6 +169,7 @@ export type OrderRecord = {
   lines: OrderLineRecord[]
   comment: string
   attachmentNames: string[]
+  attachments?: OrderAttachment[]
   status: OrderStatus
   currentStep: WorkflowStep
   waitingForUserId?: string
