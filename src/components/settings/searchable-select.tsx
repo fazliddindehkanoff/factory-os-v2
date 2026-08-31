@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckIcon, ChevronsUpDownIcon } from "lucide-react"
+import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from "lucide-react"
 
 import {
   Command,
@@ -21,6 +21,18 @@ export type SearchableSelectOption = {
   details?: string[]
 }
 
+type CreateFromSearchAction = {
+  label: (query: string) => string
+  onSelect: (query: string) => void
+}
+
+function optionMatchesSearch(option: SearchableSelectOption, search: string) {
+  return [option.label, option.searchValue ?? ""]
+    .join(" ")
+    .toLocaleLowerCase()
+    .includes(search.toLocaleLowerCase())
+}
+
 export function SearchableSelect({
   options,
   value,
@@ -30,6 +42,7 @@ export function SearchableSelect({
   emptyText,
   ariaLabel,
   disabled = false,
+  createFromSearch,
 }: {
   options: SearchableSelectOption[]
   value: string
@@ -39,12 +52,25 @@ export function SearchableSelect({
   emptyText: string
   ariaLabel: string
   disabled?: boolean
+  createFromSearch?: CreateFromSearchAction
 }) {
   const selected = options.find((option) => option.value === value)
   const [open, setOpen] = React.useState(false)
+  const [search, setSearch] = React.useState("")
+  const normalizedSearch = search.trim()
+  const canCreateFromSearch = Boolean(
+    createFromSearch &&
+      normalizedSearch &&
+      !options.some((option) => optionMatchesSearch(option, normalizedSearch)),
+  )
+
+  function changeOpen(nextOpen: boolean) {
+    setOpen(nextOpen)
+    if (!nextOpen) setSearch("")
+  }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger
         type="button"
         disabled={disabled}
@@ -73,33 +99,58 @@ export function SearchableSelect({
               : 0
           }
         >
-          <CommandInput placeholder={searchPlaceholder} />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
-            <CommandGroup>
-              {options.map((option) => (
+            {canCreateFromSearch && createFromSearch ? (
+              <CommandGroup forceMount>
                 <CommandItem
-                  key={option.value}
-                  value={option.label}
-                  keywords={option.searchValue ? [option.searchValue] : undefined}
-                  className="items-start gap-3 py-3"
+                  forceMount
+                  value={`create:${normalizedSearch}`}
+                  className="gap-3 py-3 font-medium text-primary"
                   onSelect={() => {
-                    onChange(option.value)
-                    setOpen(false)
+                    createFromSearch.onSelect(normalizedSearch)
+                    changeOpen(false)
                   }}
                 >
-                  <CheckIcon className={cn("mt-0.5 size-4 shrink-0", option.value === value ? "opacity-100" : "opacity-0")} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium leading-5 text-foreground">{option.label}</span>
-                    {option.details?.length ? (
-                      <span className="mt-1 block truncate text-xs leading-4 text-muted-foreground">
-                        {option.details.join(" | ")}
-                      </span>
-                    ) : null}
+                  <PlusIcon className="size-4" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {createFromSearch.label(normalizedSearch)}
                   </span>
                 </CommandItem>
-              ))}
-            </CommandGroup>
+              </CommandGroup>
+            ) : (
+              <>
+                <CommandEmpty>{emptyText}</CommandEmpty>
+                <CommandGroup>
+                  {options.map((option) => (
+                    <CommandItem
+                      key={option.value}
+                      value={option.label}
+                      keywords={option.searchValue ? [option.searchValue] : undefined}
+                      className="items-start gap-3 py-3"
+                      onSelect={() => {
+                        onChange(option.value)
+                        changeOpen(false)
+                      }}
+                    >
+                      <CheckIcon className={cn("mt-0.5 size-4 shrink-0", option.value === value ? "opacity-100" : "opacity-0")} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium leading-5 text-foreground">{option.label}</span>
+                        {option.details?.length ? (
+                          <span className="mt-1 block truncate text-xs leading-4 text-muted-foreground">
+                            {option.details.join(" | ")}
+                          </span>
+                        ) : null}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

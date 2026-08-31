@@ -190,7 +190,10 @@ function OrderWizardForm({
   const [error, setError] = React.useState("")
   const [publishedOrderNumber, setPublishedOrderNumber] = React.useState("")
   const [publishing, setPublishing] = React.useState(false)
-  const [productLineId, setProductLineId] = React.useState<string | null>(null)
+  const [productDialog, setProductDialog] = React.useState<{
+    lineId: string
+    initialTitle: string
+  } | null>(null)
   const [draft, setDraft] = React.useState<OrderDraft>(() =>
     revisionOrder
       ? {
@@ -348,8 +351,8 @@ function OrderWizardForm({
 
   function selectCreatedProduct(product: Product) {
     mergeProduct(product)
-    if (productLineId) updateLine(productLineId, "productId", product.id)
-    setProductLineId(null)
+    if (productDialog) updateLine(productDialog.lineId, "productId", product.id)
+    setProductDialog(null)
   }
 
   function goNext() {
@@ -650,11 +653,11 @@ function OrderWizardForm({
                           searchPlaceholder={messages.productSearch}
                           emptyText={messages.noProducts}
                           ariaLabel={`${messages.product} ${index + 1}`}
+                          createFromSearch={{
+                            label: (query) => messages.createProductFromSearch.replace("{query}", query),
+                            onSelect: (query) => setProductDialog({ lineId: line.id, initialTitle: query }),
+                          }}
                         />
-                        <Button type="button" variant="ghost" size="sm" className="h-auto px-1 py-1 text-primary" onClick={() => setProductLineId(line.id)}>
-                          <PlusIcon />
-                          {messages.createProduct}
-                        </Button>
                       </div>
                     </Field>
                     <Field label={messages.quantity} htmlFor={`quantity-${line.id}`}>
@@ -750,13 +753,14 @@ function OrderWizardForm({
         )}
       </div>
 
-      {productLineId ? (
+      {productDialog ? (
         <CreateProductDialog
           lang={lang}
           messages={messages}
           categories={data["product-categories"]}
           units={data["unit-types"]}
-          onOpenChange={(open) => { if (!open) setProductLineId(null) }}
+          initialTitle={productDialog.initialTitle}
+          onOpenChange={(open) => { if (!open) setProductDialog(null) }}
           onCreated={selectCreatedProduct}
         />
       ) : null}
@@ -769,6 +773,7 @@ function CreateProductDialog({
   messages,
   categories,
   units,
+  initialTitle,
   onOpenChange,
   onCreated,
 }: {
@@ -776,17 +781,18 @@ function CreateProductDialog({
   messages: Messages
   categories: ReturnType<typeof useSettings>["data"]["product-categories"]
   units: ReturnType<typeof useSettings>["data"]["unit-types"]
+  initialTitle: string
   onOpenChange: (open: boolean) => void
   onCreated: (product: Product) => void
 }) {
-  const [form, setForm] = React.useState({
+  const [form, setForm] = React.useState(() => ({
     code: "",
     categoryId: "",
     unitTypeId: "",
-    titleUz: "",
-    titleRu: "",
-    titleTr: "",
-  })
+    titleUz: lang === "uz" ? initialTitle : "",
+    titleRu: lang === "ru" ? initialTitle : "",
+    titleTr: lang === "tr" ? initialTitle : "",
+  }))
   const [error, setError] = React.useState("")
   const [saving, setSaving] = React.useState(false)
 
