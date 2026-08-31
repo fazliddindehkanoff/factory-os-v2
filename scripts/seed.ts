@@ -70,6 +70,7 @@ async function seed() {
     { id: "user-applicant", fullName: "Aziza Karimova", positionId: "position-operator", username: "aziza.k", phoneNumber: "+998 90 123 45 67" },
     { id: "user-supervisor", fullName: "Javlon Mirzayev", positionId: "position-supervisor", username: "javlon.s", phoneNumber: "+998 90 111 11 11" },
     { id: "user-warehouse", fullName: "Bekzod Rahimov", positionId: "position-operator", username: "bekzod.w", phoneNumber: "+998 90 222 22 22" },
+    { id: "user-warehouse-supervisor", fullName: "Kamoliddin Sobirov", positionId: "position-supervisor", username: "kamol.s", phoneNumber: "+998 90 242 42 42" },
     { id: "user-chief-engineer", fullName: "Rustam Yuldashev", positionId: "position-chief-engineer", username: "rustam.e", phoneNumber: "+998 90 232 32 32" },
     { id: "user-procurement", fullName: "Dilshod Usmonov", positionId: "position-manager", username: "dilshod.p", phoneNumber: "+998 90 333 33 33" },
     { id: "user-procurement-manager", fullName: "Nodira Ismoilova", positionId: "position-manager", username: "nodira.pm", phoneNumber: "+998 90 343 43 43" },
@@ -84,6 +85,7 @@ async function seed() {
     { userId: "user-applicant", roleId: "role-requester" },
     { userId: "user-supervisor", roleId: "role-dept_head" },
     { userId: "user-warehouse", roleId: "role-warehouse" },
+    { userId: "user-warehouse-supervisor", roleId: "role-warehouse_head" },
     { userId: "user-chief-engineer", roleId: "role-deputy_director" },
     { userId: "user-procurement", roleId: "role-procurement_head" },
     { userId: "user-procurement-manager", roleId: "role-procurement_manager" },
@@ -110,6 +112,7 @@ async function seed() {
     { userId: "user-applicant", departmentId: "department-procurement" },
     { userId: "user-supervisor", departmentId: "department-production" },
     { userId: "user-warehouse", departmentId: "department-production" },
+    { userId: "user-warehouse-supervisor", departmentId: "department-production" },
     { userId: "user-chief-engineer", departmentId: "department-production" },
     { userId: "user-procurement", departmentId: "department-procurement" },
     { userId: "user-procurement-manager", departmentId: "department-procurement" },
@@ -223,6 +226,10 @@ async function seed() {
     { id: "workflow-step-sourcing", versionId: "workflow-order-standard-v1", stepOrder: 5, titleUz: "Ta’minotchi — qidiruv jarayoni", titleRu: "Снабженец — процесс поиска", titleTr: "Satın alma uzmanı — tedarik süreci", kind: "task", assigneeType: "role", assigneeRoleId: "role-procurement_manager", skipIfRequesterIsAssignee: false },
     { id: "workflow-step-price-check", versionId: "workflow-order-standard-v1", stepOrder: 6, titleUz: "Ta’minot rahbari — narx tekshiruvi", titleRu: "Руководитель снабжения — проверка цены", titleTr: "Satın alma yöneticisi — fiyat kontrolü", kind: "approval", assigneeType: "role", assigneeRoleId: "role-procurement_head", skipIfRequesterIsAssignee: true },
     { id: "workflow-step-director", versionId: "workflow-order-standard-v1", stepOrder: 7, titleUz: "Direktor", titleRu: "Директор", titleTr: "Direktör", kind: "approval", assigneeType: "role", assigneeRoleId: "role-director", skipIfRequesterIsAssignee: true },
+    { id: "workflow-step-procurement-order", versionId: "workflow-order-standard-v1", stepOrder: 8, titleUz: "Ta’minotchi — buyurtmani rasmiylashtirish", titleRu: "Снабженец — оформление заказа", titleTr: "Satın alma uzmanı — sipariş oluşturma", kind: "task", assigneeType: "role", assigneeRoleId: "role-procurement_manager", skipIfRequesterIsAssignee: false },
+    { id: "workflow-step-procurement-supervisor", versionId: "workflow-order-standard-v1", stepOrder: 9, titleUz: "Ta’minot rahbari — buyurtmani tasdiqlash", titleRu: "Руководитель снабжения — подтверждение заказа", titleTr: "Satın alma yöneticisi — sipariş onayı", kind: "approval", assigneeType: "role", assigneeRoleId: "role-procurement_head", skipIfRequesterIsAssignee: false },
+    { id: "workflow-step-warehouse-receipt", versionId: "workflow-order-standard-v1", stepOrder: 10, titleUz: "Ombor — qabul qilish", titleRu: "Склад — приёмка", titleTr: "Depo — mal kabul", kind: "task", assigneeType: "warehouse_responsible", skipIfRequesterIsAssignee: false },
+    { id: "workflow-step-warehouse-supervisor", versionId: "workflow-order-standard-v1", stepOrder: 11, titleUz: "Ombor rahbari — qabulni tasdiqlash", titleRu: "Руководитель склада — подтверждение приёмки", titleTr: "Depo yöneticisi — kabul onayı", kind: "approval", assigneeType: "role", assigneeRoleId: "role-warehouse_head", skipIfRequesterIsAssignee: false },
   ])
 
   await insertIfMissing(schema.workflowAssignmentRules, [{

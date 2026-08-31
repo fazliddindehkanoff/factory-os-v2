@@ -113,11 +113,12 @@ function OrderWizardForm({
   const { addOrder, resubmitOrder } = useOrders()
   const { can, currentUser } = useAuthorization()
   const assistantCreatesForSupervisors = currentUser?.roleIds.includes("role-requester") ?? false
+  const applicantIsCurrentUser = Boolean(currentUser && !assistantCreatesForSupervisors)
   const isDepartmentSupervisor = currentUser?.roleIds.includes("role-dept_head") ?? false
   const assignedDepartmentIds = data.departments
     .filter((department) => currentUser?.departmentIds.includes(department.id))
     .map((department) => department.id)
-  const initialDepartmentIds = isDepartmentSupervisor && assignedDepartmentIds.length === 1
+  const initialDepartmentIds = applicantIsCurrentUser && assignedDepartmentIds.length === 1
     ? assignedDepartmentIds
     : []
   const initialBranchIds = getBranchIds(initialDepartmentIds)
@@ -130,7 +131,7 @@ function OrderWizardForm({
           user.departmentIds.some((id) => revisionOrder.departmentIds.includes(id)),
       )
     : undefined
-  const fixedRevisionApplicant = isDepartmentSupervisor ? currentUser : revisionSupervisor
+  const fixedRevisionApplicant = applicantIsCurrentUser ? currentUser : revisionSupervisor
   const revisionApplicantId = fixedRevisionApplicant?.id ?? revisionOrder?.applicantId ?? ""
   const revisionDepartmentIds = fixedRevisionApplicant
     ? revisionOrder?.departmentIds.filter((id) => fixedRevisionApplicant.departmentIds.includes(id)) ?? []
@@ -199,7 +200,7 @@ function OrderWizardForm({
         }
       : {
           type: "material",
-          applicantId: isDepartmentSupervisor ? currentUser?.id ?? "" : "",
+          applicantId: applicantIsCurrentUser ? currentUser?.id ?? "" : "",
           departmentIds: initialDepartmentIds,
           branchIds: selectedInitialBranchIds,
           warehouseId: initialWarehouses.length === 1 ? initialWarehouses[0].id : "",
@@ -214,7 +215,7 @@ function OrderWizardForm({
 
   const availableApplicants = assistantCreatesForSupervisors
     ? data.users.filter((user) => user.roleIds.includes("role-dept_head"))
-    : data.users
+    : []
   const applicant = data.users.find((user) => user.id === draft.applicantId)
   const availableDepartments = data.departments.filter((department) =>
     applicant?.departmentIds.includes(department.id),
@@ -440,7 +441,7 @@ function OrderWizardForm({
                 ))}
               </div>
             </Field>
-            {isDepartmentSupervisor ? (
+            {applicantIsCurrentUser ? (
               <Field label={messages.applicant} hint={supervisorApplicantHint(lang)}>
                 <div
                   className="flex min-h-9 items-center rounded-lg border bg-muted/35 px-3 text-sm font-medium"
@@ -455,7 +456,23 @@ function OrderWizardForm({
                 hint={assistantCreatesForSupervisors ? supervisorOnlyHint(lang) : undefined}
               >
                 <SearchableSelect
-                  options={availableApplicants.map((user) => ({ value: user.id, label: user.fullName, searchValue: `${user.fullName} ${user.username} ${user.phoneNumber}` }))}
+                  options={availableApplicants.map((user) => {
+                    const roleNames = data.roles
+                      .filter((role) => user.roleIds.includes(role.id))
+                      .map((role) => getLocalizedTitle(role, lang))
+                    const departmentNames = data.departments
+                      .filter((department) => user.departmentIds.includes(department.id))
+                      .map((department) => getLocalizedTitle(department, lang))
+                    const roleLabel = roleNames.join(", ") || "—"
+                    const departmentLabel = departmentNames.join(", ") || "—"
+
+                    return {
+                      value: user.id,
+                      label: user.fullName,
+                      searchValue: `${user.fullName} ${user.username} ${user.phoneNumber} ${roleLabel} ${departmentLabel}`,
+                      details: [roleLabel, departmentLabel],
+                    }
+                  })}
                   value={draft.applicantId}
                   onChange={selectApplicant}
                   placeholder={messages.selectApplicant}
@@ -553,7 +570,14 @@ function OrderWizardForm({
               />
             </Field>
             <Field label={messages.expectedDate} htmlFor="order-expected-date">
-              <Input id="order-expected-date" type="date" min={today} value={draft.expectedDate} onChange={(event) => updateDraft("expectedDate", event.target.value)} />
+              <Input
+                id="order-expected-date"
+                type="date"
+                min={today}
+                value={draft.expectedDate}
+                onClick={(event) => event.currentTarget.showPicker()}
+                onChange={(event) => updateDraft("expectedDate", event.target.value)}
+              />
             </Field>
             <Field label={messages.urgency}>
               <div className="flex h-9 items-center">

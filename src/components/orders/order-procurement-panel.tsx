@@ -53,7 +53,14 @@ export function OrderProcurementPanel({ order, lang, messages }: {
     : []
   const isHead = currentUser?.roleIds.includes("role-procurement_head") ?? false
   const isDirector = currentUser?.roleIds.includes("role-director") ?? false
-  const directorCanReviewCosts = isDirector && ["director", "complete"].includes(order.currentStep)
+  const directorCanReviewCosts = isDirector && [
+    "director",
+    "procurement_order",
+    "procurement_supervisor",
+    "warehouse_receipt",
+    "warehouse_supervisor",
+    "complete",
+  ].includes(order.currentStep)
   const selectedQuotation = caseQuotes.find((quotation) => quotation.selected)
   const isAssignedSpecialist = currentUser?.id === procurementCase?.assigneeId
   const canAssignSpecialist = isHead && can("procurement.select_supplier")

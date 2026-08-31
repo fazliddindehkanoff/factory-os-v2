@@ -3,7 +3,7 @@
 import * as React from "react"
 
 import { hasPermission, systemRoleTemplates, type PermissionCode } from "@/lib/rbac"
-import type { LocalizedTitle, SettingsData, SettingsSection } from "@/lib/settings"
+import type { LocalizedTitle, Product, SettingsData, SettingsSection } from "@/lib/settings"
 
 const systemRoles: SettingsData["roles"] = systemRoleTemplates.map((role) => ({
   id: `role-${role.code}`,
@@ -220,6 +220,17 @@ const initialSettingsData: SettingsData = {
       roleIds: ["role-warehouse"],
     },
     {
+      id: "user-warehouse-supervisor",
+      fullName: "Kamoliddin Sobirov",
+      positionId: "position-supervisor",
+      username: "kamol.s",
+      password: "••••••••",
+      telegramChatId: "",
+      phoneNumber: "+998 90 242 42 42",
+      departmentIds: ["department-production"],
+      roleIds: ["role-warehouse_head"],
+    },
+    {
       id: "user-procurement",
       fullName: "Dilshod Usmonov",
       positionId: "position-manager",
@@ -317,6 +328,7 @@ type SettingsContextValue = {
     titles: LocalizedTitle,
   ) => void
   reorderUnitType: (activeId: string, overId: string) => void
+  replaceProducts: (products: Product[]) => void
 }
 
 const SettingsContext = React.createContext<SettingsContextValue | null>(null)
@@ -324,11 +336,16 @@ const SettingsContext = React.createContext<SettingsContextValue | null>(null)
 export function SettingsProvider({
   children,
   initialCurrentUserId = "user-admin",
+  initialProducts,
 }: {
   children: React.ReactNode
   initialCurrentUserId?: string
+  initialProducts?: Product[]
 }) {
-  const [data, setData] = React.useState(initialSettingsData)
+  const [data, setData] = React.useState(() => ({
+    ...initialSettingsData,
+    products: initialProducts ?? initialSettingsData.products,
+  }))
   const [currentUserId] = React.useState(initialCurrentUserId)
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
@@ -421,9 +438,23 @@ export function SettingsProvider({
     })
   }
 
+  function replaceProducts(nextProducts: Product[]) {
+    if (!can("settings.manage")) return
+    setData((current) => ({ ...current, products: nextProducts }))
+  }
+
   return (
     <SettingsContext.Provider
-      value={{ data, currentUserId, addRecord, updateRecord, deleteRecord, updateLocalizedTitles, reorderUnitType }}
+      value={{
+        data,
+        currentUserId,
+        addRecord,
+        updateRecord,
+        deleteRecord,
+        updateLocalizedTitles,
+        reorderUnitType,
+        replaceProducts,
+      }}
     >
       {children}
     </SettingsContext.Provider>

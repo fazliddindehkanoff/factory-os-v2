@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { asc, eq } from "drizzle-orm"
 import { Geist, Geist_Mono } from "next/font/google"
 import { notFound } from "next/navigation"
 
@@ -6,6 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { SettingsProvider } from "@/components/settings/settings-provider"
 import { OrdersProvider } from "@/components/orders/orders-provider"
 import { ProcurementProvider } from "@/components/procurement/procurement-provider"
+import { db } from "@/db/client"
+import { products } from "@/db/schema"
 import { getSessionUser } from "@/lib/auth/session"
 import { isLocale, locales } from "@/lib/i18n"
 
@@ -41,6 +44,15 @@ export default async function LocaleLayout({
 
   if (!isLocale(lang)) notFound()
   const session = await getSessionUser()
+  const initialProducts = session ? await db.select({
+    id: products.id,
+    code: products.code,
+    categoryId: products.categoryId,
+    unitTypeId: products.unitTypeId,
+    titleUz: products.titleUz,
+    titleRu: products.titleRu,
+    titleTr: products.titleTr,
+  }).from(products).where(eq(products.isActive, true)).orderBy(asc(products.code)) : undefined
 
   return (
     <html
@@ -49,7 +61,7 @@ export default async function LocaleLayout({
     >
       <body className="flex min-h-full flex-col">
         <TooltipProvider>
-          <SettingsProvider initialCurrentUserId={session?.userId}>
+          <SettingsProvider initialCurrentUserId={session?.userId} initialProducts={initialProducts}>
             <OrdersProvider>
               <ProcurementProvider>{children}</ProcurementProvider>
             </OrdersProvider>

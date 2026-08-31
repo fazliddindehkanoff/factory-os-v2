@@ -18,6 +18,7 @@ export type SearchableSelectOption = {
   value: string
   label: string
   searchValue?: string
+  details?: string[]
 }
 
 export function SearchableSelect({
@@ -51,8 +52,13 @@ export function SearchableSelect({
         aria-expanded={open}
         className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-input bg-background px-3 py-2 text-left text-sm font-normal shadow-xs outline-none transition-colors hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-muted/45 disabled:opacity-65"
       >
-        <span className={cn("min-w-0 flex-1 truncate text-left", !selected && "text-muted-foreground")}>
-          {selected?.label ?? placeholder}
+        <span className={cn("min-w-0 flex-1 text-left", !selected && "text-muted-foreground")}>
+          <span className="block truncate font-medium">{selected?.label ?? placeholder}</span>
+          {selected?.details?.length ? (
+            <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
+              {selected.details.join(" | ")}
+            </span>
+          ) : null}
         </span>
         <ChevronsUpDownIcon className="size-4 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
@@ -76,13 +82,21 @@ export function SearchableSelect({
                   key={option.value}
                   value={option.label}
                   keywords={option.searchValue ? [option.searchValue] : undefined}
+                  className="items-start gap-3 py-3"
                   onSelect={() => {
                     onChange(option.value)
                     setOpen(false)
                   }}
                 >
-                  <CheckIcon className={cn("size-4", option.value === value ? "opacity-100" : "opacity-0")} />
-                  {option.label}
+                  <CheckIcon className={cn("mt-0.5 size-4 shrink-0", option.value === value ? "opacity-100" : "opacity-0")} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium leading-5 text-foreground">{option.label}</span>
+                    {option.details?.length ? (
+                      <span className="mt-1 block truncate text-xs leading-4 text-muted-foreground">
+                        {option.details.join(" | ")}
+                      </span>
+                    ) : null}
+                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>

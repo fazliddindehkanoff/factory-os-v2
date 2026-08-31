@@ -4,8 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  ChartNoAxesColumnIncreasingIcon,
   CheckIcon,
+  CircleCheckBigIcon,
+  Clock3Icon,
   FilterIcon,
+  ListChecksIcon,
   PlusIcon,
   SearchIcon,
   Trash2Icon,
@@ -40,7 +44,9 @@ import {
 import type { Locale, Messages } from "@/lib/i18n";
 import {
   canUserViewRejectedOrder,
+  isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
+  workflowSteps,
   type OrderRecord,
   type OrderStatus,
   type UrgencyLevel,
@@ -170,6 +176,34 @@ export function OrdersList({
     pageIds.some((id) => validSelectedIds.has(id)) && !allPageSelected;
   const hasFilters = Object.values(filters).some(Boolean);
   const detailOrder = filteredOrders.find((order) => order.id === detailOrderId);
+  const statistics = [
+    {
+      label: messages.totalOrders,
+      value: orders.length,
+      icon: ListChecksIcon,
+      iconClassName: "bg-primary/10 text-primary",
+    },
+    {
+      label: copy.waitingForMe,
+      value: orders.filter(waitingForCurrentUser).length,
+      icon: Clock3Icon,
+      iconClassName: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    },
+    {
+      label: copy.inProgress,
+      value: orders.filter((order) =>
+        ["supervisor_review", "warehouse_check", "in_progress"].includes(order.status),
+      ).length,
+      icon: ChartNoAxesColumnIncreasingIcon,
+      iconClassName: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+    },
+    {
+      label: copy.completedOrders,
+      value: orders.filter(isOrderSuccessfullyClosed).length,
+      icon: CircleCheckBigIcon,
+      iconClassName: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    },
+  ];
 
   React.useEffect(() => {
     const ids = pageIdKey;
@@ -244,6 +278,33 @@ export function OrdersList({
           </Link>
         ) : null}
       </div>
+
+      <section
+        aria-label={copy.orderStatistics}
+        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        {statistics.map((statistic) => {
+          const Icon = statistic.icon;
+          return (
+            <article
+              key={statistic.label}
+              className="flex min-w-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-xs"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-muted-foreground">
+                  {statistic.label}
+                </p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums">
+                  {statistic.value}
+                </p>
+              </div>
+              <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${statistic.iconClassName}`}>
+                <Icon className="size-4.5" aria-hidden="true" />
+              </span>
+            </article>
+          );
+        })}
+      </section>
 
       <nav
         aria-label={copy.queueLabel}
@@ -485,8 +546,15 @@ export function OrdersList({
           messages={messages}
           data={data}
           isCurrentAssignee={waitingForCurrentUser(detailOrder)}
-          canApprove={can("approvals.approve")}
-          canReject={can("approvals.reject")}
+          canApprove={
+            can("approvals.approve") ||
+            (detailOrder.currentStep === "procurement_order" && can("procurement.quote")) ||
+            (detailOrder.currentStep === "warehouse_receipt" && can("warehouse.receive"))
+          }
+          canReject={
+            can("approvals.reject") &&
+            !["procurement_order", "warehouse_receipt"].includes(detailOrder.currentStep)
+          }
           canWarehouseReport={can("warehouse.check_stock")}
           canRevise={
             detailOrder.status === "rejected" &&
@@ -693,6 +761,10 @@ function OrderDetailsDialog({
     "sourcing",
     "price_check",
   ].includes(order.currentStep);
+  const isOperationalTask = [
+    "procurement_order",
+    "warehouse_receipt",
+  ].includes(order.currentStep);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -760,7 +832,7 @@ function OrderDetailsDialog({
 
         <WorkflowTimeline order={order} data={data} lang={lang} />
 
-        <section aria-labelledby="order-lines" className="space-y-3">
+        <section aria-labelledby="order-lines" className="min-w-0 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 id="order-lines" className="text-sm font-semibold">
               {messages.orderPositions}
@@ -769,78 +841,91 @@ function OrderDetailsDialog({
               {order.lines.length} {messages.positionsCount.toLocaleLowerCase()}
             </span>
           </div>
-          <div className="space-y-3">
-            {order.lines.map((line, index) => {
-              const product = data.products.find(
-                (item) => item.id === line.productId,
-              );
-              const unit = data["unit-types"].find(
-                (item) => item.id === product?.unitTypeId,
-              );
-              const available = line.availableQuantity ?? 0;
-              const remaining = Math.max(0, line.quantity - available);
-              return (
-                <article key={line.id} className="rounded-xl border p-4">
-                  <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                    <div className="min-w-0">
-                      <p className="font-medium">
-                        {index + 1}.{" "}
-                        {product
-                          ? getLocalizedTitle(product, lang)
-                          : line.productId}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {product?.code ?? "—"}
-                      </p>
-                    </div>
-                    <Badge variant="outline">
-                      {fulfillmentLabel(line.fulfillmentStatus, lang)}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-                    <DetailField
-                      label={copy.requested}
-                      value={`${line.quantity} ${unit?.code ?? ""}`.trim()}
-                    />
-                    <DetailField
-                      label={copy.available}
-                      value={`${available} ${unit?.code ?? ""}`.trim()}
-                    />
-                    <DetailField
-                      label={copy.remaining}
-                      value={`${remaining} ${unit?.code ?? ""}`.trim()}
-                    />
-                  </div>
-                  {line.note ? (
-                    <p className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-sm">
-                      <span className="font-medium">{messages.note}: </span>
-                      {line.note}
-                    </p>
-                  ) : null}
-                  {isWarehouseAction ? (
-                    <label className="mt-3 grid max-w-56 gap-1 text-xs font-medium">
-                      {copy.available}
-                      <Input
-                        type="number"
-                        min="0"
-                        max={line.quantity}
-                        step="any"
-                        value={quantities[line.id] ?? 0}
-                        onChange={(event) =>
-                          setQuantities((current) => ({
-                            ...current,
-                            [line.id]: Math.min(
-                              line.quantity,
-                              Math.max(0, Number(event.target.value)),
-                            ),
-                          }))
-                        }
-                      />
-                    </label>
-                  ) : null}
-                </article>
-              );
-            })}
+          <div className="min-w-0 overflow-hidden rounded-xl border">
+            <Table className="min-w-[52rem]">
+              <TableHeader className="bg-muted/50">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12 text-center">#</TableHead>
+                  <TableHead className="min-w-52">{messages.product}</TableHead>
+                  <TableHead className="text-right">{copy.requested}</TableHead>
+                  <TableHead className="text-right">{copy.available}</TableHead>
+                  <TableHead className="text-right">{copy.remaining}</TableHead>
+                  <TableHead>{messages.orderStatus}</TableHead>
+                  <TableHead className="min-w-44">{messages.note}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {order.lines.map((line, index) => {
+                  const product = data.products.find(
+                    (item) => item.id === line.productId,
+                  );
+                  const unit = data["unit-types"].find(
+                    (item) => item.id === product?.unitTypeId,
+                  );
+                  const productTitle = product
+                    ? getLocalizedTitle(product, lang)
+                    : line.productId;
+                  const available = line.availableQuantity ?? 0;
+                  const remaining = Math.max(0, line.quantity - available);
+                  return (
+                    <TableRow key={line.id}>
+                      <TableCell className="text-center text-muted-foreground">
+                        {index + 1}
+                      </TableCell>
+                      <TableCell className="whitespace-normal">
+                        <p className="font-medium">{productTitle}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          {product?.code ?? "—"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {line.quantity} {unit?.code ?? ""}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {isWarehouseAction ? (
+                          <div className="ml-auto flex w-32 items-center gap-2">
+                            <Input
+                              aria-label={`${copy.available}: ${productTitle}`}
+                              className="h-9 text-right"
+                              type="number"
+                              min="0"
+                              max={line.quantity}
+                              step="any"
+                              value={quantities[line.id] ?? 0}
+                              onChange={(event) =>
+                                setQuantities((current) => ({
+                                  ...current,
+                                  [line.id]: Math.min(
+                                    line.quantity,
+                                    Math.max(0, Number(event.target.value)),
+                                  ),
+                                }))
+                              }
+                            />
+                            {unit?.code ? (
+                              <span className="text-muted-foreground">{unit.code}</span>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <>{available} {unit?.code ?? ""}</>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {remaining} {unit?.code ?? ""}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {fulfillmentLabel(line.fulfillmentStatus, lang)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="max-w-64 whitespace-normal text-muted-foreground">
+                        {line.note || "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
         </section>
 
@@ -868,7 +953,17 @@ function OrderDetailsDialog({
         </section>
 
         {order.lines.some((line) => line.fulfillmentStatus === "needs_procurement") &&
-        ["procurement_accept", "sourcing", "price_check", "director", "complete"].includes(order.currentStep) ? (
+        [
+          "procurement_accept",
+          "sourcing",
+          "price_check",
+          "director",
+          "procurement_order",
+          "procurement_supervisor",
+          "warehouse_receipt",
+          "warehouse_supervisor",
+          "complete",
+        ].includes(order.currentStep) ? (
           <OrderProcurementPanel order={order} lang={lang} messages={messages} />
         ) : null}
 
@@ -899,7 +994,7 @@ function OrderDetailsDialog({
               ) : null}
               {canApprove ? (
                 <Button onClick={() => onApprove(order.id)}>
-                  {copy.approve}
+                  {isOperationalTask ? copy.completeStep : copy.approve}
                 </Button>
               ) : null}
             </>
@@ -940,19 +1035,16 @@ function WorkflowTimeline({
   lang: Locale;
 }) {
   const copy = workflowCopy(lang);
-  const steps: Exclude<OrderRecord["currentStep"], "complete">[] = [
-    "department_supervisor",
-    "warehouse",
-    "chief_engineer",
-    "procurement_accept",
-    "sourcing",
-    "price_check",
-    "director",
-  ];
+  const steps: Exclude<OrderRecord["currentStep"], "complete">[] = [...workflowSteps];
   const creator = data.users.find((user) => user.id === order.createdByUserId);
   const currentIndex = steps.findIndex((step) => step === order.currentStep);
+  const rejectedHistory = [...(order.workflowHistory ?? [])]
+    .reverse()
+    .find((entry) => entry.action === "rejected");
   const rejectedIndex = order.status === "rejected"
-    ? Math.max(0, steps.findIndex((step) => workflowAssignee(step, order, data)?.id === order.lastActorUserId))
+    ? Math.max(0, rejectedHistory
+      ? steps.indexOf(rejectedHistory.step)
+      : steps.findIndex((step) => workflowAssignee(step, order, data)?.id === order.lastActorUserId))
     : -1;
   const supervisorId = workflowAssignee("department_supervisor", order, data)?.id;
   const supervisorWasSkipped = order.createdByUserId === supervisorId;
@@ -961,7 +1053,7 @@ function WorkflowTimeline({
     {
       id: "created",
       title: copy.requestCreated,
-      subtitle: `${creator?.fullName ?? order.createdByUserId} · ${formatDate(order.createdAt.slice(0, 10))}`,
+      subtitle: `${creator?.fullName ?? order.createdByUserId} · ${formatDateTime(order.createdAt, lang)}`,
       state: "completed" as const,
     },
     ...steps.map((step, index) => {
@@ -975,10 +1067,23 @@ function WorkflowTimeline({
       const assignee = workflowAssignee(step, order, data);
       const isAutomatic = step === "department_supervisor" && supervisorWasSkipped;
       if (isAutomatic && state === "completed") state = "skipped";
+      const historyEntry = [...(order.workflowHistory ?? [])]
+        .reverse()
+        .find((entry) => {
+          if (entry.step !== step) return false;
+          if (state === "rejected") return entry.action === "rejected";
+          return ["approved", "completed", "skipped"].includes(entry.action);
+        });
+      const historyActor = data.users.find(
+        (user) => user.id === historyEntry?.actorUserId,
+      );
+      const subtitle = historyEntry && ["completed", "rejected", "skipped"].includes(state)
+        ? `${historyActor?.fullName ?? assignee?.fullName ?? copy.unassigned} · ${formatDateTime(historyEntry.createdAt, lang)}`
+        : assignee?.fullName ?? copy.unassigned;
       return {
         id: step,
         title: stepLabel(step, lang),
-        subtitle: assignee?.fullName ?? copy.unassigned,
+        subtitle,
         state,
         isAutomatic,
       };
@@ -1045,23 +1150,32 @@ function workflowAssignee(
         user.departmentIds.some((id) => order.departmentIds.includes(id)),
     );
   }
-  if (step === "warehouse") {
+  if (["warehouse", "warehouse_receipt"].includes(step)) {
     const responsibleId = data.warehouses.find(
       (warehouse) => warehouse.id === order.warehouseId,
     )?.responsibleUserId;
     return data.users.find((user) => user.id === responsibleId);
   }
-  if (step === "sourcing" && order.procurementSpecialistUserId) {
+  if (["sourcing", "procurement_order"].includes(step) && order.procurementSpecialistUserId) {
     return data.users.find((user) => user.id === order.procurementSpecialistUserId);
   }
-  const roleByStep = {
+  const roleByStep: Partial<
+    Record<Exclude<OrderRecord["currentStep"], "complete">, string>
+  > = {
     chief_engineer: "role-deputy_director",
     procurement_accept: "role-procurement_head",
     sourcing: "role-procurement_manager",
     price_check: "role-procurement_head",
     director: "role-director",
-  } as const;
-  return data.users.find((user) => user.roleIds.includes(roleByStep[step]));
+    procurement_order: "role-procurement_manager",
+    procurement_supervisor: "role-procurement_head",
+    warehouse_supervisor: "role-warehouse_head",
+  };
+  const roleId = roleByStep[step];
+  return data.users.find((user) => roleId && user.roleIds.includes(roleId)) ??
+    (step === "warehouse_supervisor"
+      ? data.users.find((user) => user.roleIds.includes("role-warehouse"))
+      : undefined);
 }
 
 function OrderFilter({
@@ -1119,6 +1233,22 @@ function urgencyOptions(messages: Messages) {
 function formatDate(date: string) {
   const [year, month, day] = date.split("-");
   return `${day}.${month}.${year}`;
+}
+function formatDateTime(value: string, lang: Locale) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const locale = { uz: "uz-UZ", ru: "ru-RU", tr: "tr-TR" }[lang];
+  const parts = new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const valueOf = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${valueOf("day")}.${valueOf("month")}.${valueOf("year")}, ${valueOf("hour")}:${valueOf("minute")}`;
 }
 function StatusBadge({
   status,
@@ -1181,6 +1311,10 @@ function stepLabel(step: OrderRecord["currentStep"], lang: Locale) {
       sourcing: "Ta’minotchi — qidiruv",
       price_check: "Ta’minot rahbari — narx tekshiruvi",
       director: "Direktor",
+      procurement_order: "Ta’minotchi — buyurtmani rasmiylashtirish",
+      procurement_supervisor: "Ta’minot rahbari — buyurtmani tasdiqlash",
+      warehouse_receipt: "Ombor — qabul qilish",
+      warehouse_supervisor: "Ombor rahbari — qabulni tasdiqlash",
       complete: "Yakunlangan",
     },
     ru: {
@@ -1191,6 +1325,10 @@ function stepLabel(step: OrderRecord["currentStep"], lang: Locale) {
       sourcing: "Снабженец — поиск",
       price_check: "Руководитель снабжения — проверка цены",
       director: "Директор",
+      procurement_order: "Снабженец — оформление заказа",
+      procurement_supervisor: "Руководитель снабжения — подтверждение заказа",
+      warehouse_receipt: "Склад — приёмка",
+      warehouse_supervisor: "Руководитель склада — подтверждение приёмки",
       complete: "Завершено",
     },
     tr: {
@@ -1201,6 +1339,10 @@ function stepLabel(step: OrderRecord["currentStep"], lang: Locale) {
       sourcing: "Satın almacı — tedarik araması",
       price_check: "Satın alma yöneticisi — fiyat kontrolü",
       director: "Direktör",
+      procurement_order: "Satın alma uzmanı — sipariş oluşturma",
+      procurement_supervisor: "Satın alma yöneticisi — sipariş onayı",
+      warehouse_receipt: "Depo — mal kabul",
+      warehouse_supervisor: "Depo yöneticisi — kabul onayı",
       complete: "Tamamlandı",
     },
   } as const;
@@ -1310,6 +1452,7 @@ function workflowCopyBase(lang: Locale) {
       waitingForMe: "Ожидает меня",
       noWaiting: "Нет заявок, ожидающих вашего действия",
       approve: "Одобрить",
+      completeStep: "Завершить этап",
       reject: "Отклонить",
       warehouseReport: "Отчет склада",
       warehouseHelp: "Укажите доступное количество для каждой позиции.",
@@ -1319,6 +1462,8 @@ function workflowCopyBase(lang: Locale) {
       cancel: "Отмена",
       supervisorReview: "На согласовании руководителя",
       inProgress: "В процессе",
+      orderStatistics: "Статистика заявок",
+      completedOrders: "Завершено",
       fulfilled: "Исполнено со склада",
       fulfilledShort: "со склада",
     };
@@ -1329,6 +1474,7 @@ function workflowCopyBase(lang: Locale) {
       waitingForMe: "Beni bekliyor",
       noWaiting: "İşleminizi bekleyen talep yok",
       approve: "Onayla",
+      completeStep: "Aşamayı tamamla",
       reject: "Reddet",
       warehouseReport: "Depo raporu",
       warehouseHelp: "Her kalem için mevcut miktarı girin.",
@@ -1338,6 +1484,8 @@ function workflowCopyBase(lang: Locale) {
       cancel: "İptal",
       supervisorReview: "Bölüm onayı bekliyor",
       inProgress: "Devam ediyor",
+      orderStatistics: "Talep istatistikleri",
+      completedOrders: "Tamamlandı",
       fulfilled: "Depodan karşılandı",
       fulfilledShort: "depodan",
     };
@@ -1347,6 +1495,7 @@ function workflowCopyBase(lang: Locale) {
     waitingForMe: "Meni kutmoqda",
     noWaiting: "Sizning amalingizni kutayotgan buyurtma yo‘q",
     approve: "Tasdiqlash",
+    completeStep: "Bosqichni yakunlash",
     reject: "Rad etish",
     warehouseReport: "Ombor hisoboti",
     warehouseHelp: "Har bir pozitsiya uchun mavjud miqdorni kiriting.",
@@ -1356,6 +1505,8 @@ function workflowCopyBase(lang: Locale) {
     cancel: "Bekor qilish",
     supervisorReview: "Bo‘lim rahbari tasdig‘ida",
     inProgress: "Jarayonda",
+    orderStatistics: "Buyurtmalar statistikasi",
+    completedOrders: "Yakunlangan",
     fulfilled: "Ombordan ta’minlandi",
     fulfilledShort: "ombordan",
   };

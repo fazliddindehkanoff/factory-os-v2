@@ -2,11 +2,13 @@
 
 import * as React from "react"
 import {
+  DownloadIcon,
   LanguagesIcon,
   LoaderCircleIcon,
   PlusIcon,
   SearchIcon,
   Trash2Icon,
+  UploadIcon,
 } from "lucide-react"
 
 import { AccessDenied } from "@/components/auth/access-denied"
@@ -40,6 +42,13 @@ import {
 
 type FormValue = string | string[] | boolean
 type FormState = Record<string, FormValue>
+type ProductExcelResponse = {
+  created?: number
+  updated?: number
+  products?: ReturnType<typeof useSettings>["data"]["products"]
+  error?: string
+  issues?: Array<{ row: number; message: string }>
+}
 
 const emptyLocalizedTitle = {
   titleUz: "",
@@ -63,6 +72,7 @@ export function SettingsWorkspace({
     deleteRecord,
     updateLocalizedTitles,
     reorderUnitType,
+    replaceProducts,
   } = useSettings()
   const [query, setQuery] = React.useState("")
   const [filters, setFilters] = React.useState<SettingsFiltersState>({})
@@ -71,7 +81,10 @@ export function SettingsWorkspace({
   const [deletingIds, setDeletingIds] = React.useState<string[]>([])
   const [formError, setFormError] = React.useState("")
   const [listError, setListError] = React.useState("")
+  const [listNotice, setListNotice] = React.useState("")
+  const [excelOperation, setExcelOperation] = React.useState<"upload" | "download" | null>(null)
   const [translating, setTranslating] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [form, setForm] = React.useState<FormState>(createInitialForm(section))
   const sectionTitle = getSectionTitle(section, messages)
   const { canViewSettingsSection, canManageSettingsSection } = useAuthorization()
@@ -275,6 +288,61 @@ export function SettingsWorkspace({
     }
   }
 
+  async function downloadProducts() {
+    setListError("")
+    setListNotice("")
+    setExcelOperation("download")
+    try {
+      const response = await fetch("/api/products/excel", { cache: "no-store" })
+      if (!response.ok) throw new Error(messages.productExportFailed)
+
+      const blob = await response.blob()
+      const contentDisposition = response.headers.get("Content-Disposition") ?? ""
+      const filename = contentDisposition.match(/filename="([^"]+)"/)?.[1] ?? "factory-os-products.xlsx"
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = filename
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : messages.productExportFailed)
+    } finally {
+      setExcelOperation(null)
+    }
+  }
+
+  async function uploadProducts(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file) return
+
+    setListError("")
+    setListNotice("")
+    setExcelOperation("upload")
+    try {
+      const formData = new FormData()
+      formData.set("file", file)
+      const response = await fetch("/api/products/excel", { method: "POST", body: formData })
+      const payload = await response.json() as ProductExcelResponse
+      if (!response.ok || !payload.products) {
+        const details = payload.issues?.slice(0, 3)
+          .map((issue) => `Row ${issue.row}: ${issue.message}`)
+          .join(" ")
+        throw new Error(details || payload.error || messages.productImportFailed)
+      }
+
+      replaceProducts(payload.products)
+      setListNotice(messages.productsImported
+        .replace("{created}", String(payload.created ?? 0))
+        .replace("{updated}", String(payload.updated ?? 0)))
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : messages.productImportFailed)
+    } finally {
+      setExcelOperation(null)
+    }
+  }
+
   if (!canView) {
     const required: PermissionCode[] = section === "roles"
       ? ["roles.manage"]
@@ -291,7 +359,43 @@ export function SettingsWorkspace({
           <h1 className="text-2xl font-semibold tracking-tight">{sectionTitle}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{messages.settingsDescription}</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <div className="flex flex-wrap gap-2">
+          {section === "products" ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={downloadProducts}
+                disabled={excelOperation !== null}
+                className="flex-1 sm:flex-none"
+              >
+                {excelOperation === "download" ? <LoaderCircleIcon className="animate-spin" /> : <DownloadIcon />}
+                {excelOperation === "download" ? messages.downloadingExcel : messages.downloadExcel}
+              </Button>
+              {canManage ? (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    onChange={uploadProducts}
+                    className="sr-only"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={excelOperation !== null}
+                    className="flex-1 sm:flex-none"
+                  >
+                    {excelOperation === "upload" ? <LoaderCircleIcon className="animate-spin" /> : <UploadIcon />}
+                    {excelOperation === "upload" ? messages.uploadingProducts : messages.uploadProducts}
+                  </Button>
+                </>
+              ) : null}
+            </>
+          ) : null}
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           {canCreate ? (
             <DialogTrigger
               onClick={openCreateDialog}
@@ -339,8 +443,13 @@ export function SettingsWorkspace({
               </DialogFooter>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
+
+      {section === "products" ? (
+        <p className="text-sm text-muted-foreground">{messages.productImportHelp}</p>
+      ) : null}
 
       <div className="relative max-w-sm">
         <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -362,6 +471,7 @@ export function SettingsWorkspace({
       />
 
       {listError ? <p role="alert" className="text-sm text-destructive">{listError}</p> : null}
+      {listNotice ? <p role="status" className="text-sm text-emerald-700 dark:text-emerald-400">{listNotice}</p> : null}
 
       <SettingsList
         key={`${section}:${query}:${JSON.stringify(filters)}`}

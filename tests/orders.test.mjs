@@ -5,9 +5,12 @@ import {
   canCreateRequestForApplicant,
   canUserViewRejectedOrder,
   formatWorkflowNotification,
+  getNextWorkflowStep,
   isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
+  resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
+  workflowSteps,
 } from "../src/lib/orders.ts"
 
 test("assistant-created requests still require the selected supervisor approval", () => {
@@ -29,6 +32,23 @@ test("assistants can create requests only for department supervisors", () => {
   )
 })
 
+test("only assistants may choose a different applicant", () => {
+  assert.equal(
+    resolveOrderApplicantId(
+      { id: "user-assistant", roleIds: ["role-requester"] },
+      "user-supervisor",
+    ),
+    "user-supervisor",
+  )
+  assert.equal(
+    resolveOrderApplicantId(
+      { id: "user-director", roleIds: ["role-director"] },
+      "user-supervisor",
+    ),
+    "user-director",
+  )
+})
+
 test("a supervisor creating their own request skips only their own approval", () => {
   assert.equal(shouldSkipSupervisorApproval("user-supervisor", "user-supervisor"), true)
   assert.equal(shouldSkipSupervisorApproval("user-supervisor", undefined), false)
@@ -45,6 +65,26 @@ test("warehouse-stage requests follow the configured warehouse responsible user"
   const staleOrder = { currentStep: "warehouse", waitingForUserId: "user-admin" }
   assert.equal(isOrderWaitingForUser(staleOrder, "user-warehouse", "user-warehouse"), true)
   assert.equal(isOrderWaitingForUser(staleOrder, "user-admin", "user-warehouse"), false)
+})
+
+test("procured orders pass through operational work and both final supervisors", () => {
+  assert.deepEqual(workflowSteps.slice(-4), [
+    "procurement_order",
+    "procurement_supervisor",
+    "warehouse_receipt",
+    "warehouse_supervisor",
+  ])
+  assert.equal(getNextWorkflowStep("director"), "procurement_order")
+  assert.equal(getNextWorkflowStep("procurement_order"), "procurement_supervisor")
+  assert.equal(getNextWorkflowStep("procurement_supervisor"), "warehouse_receipt")
+  assert.equal(getNextWorkflowStep("warehouse_receipt"), "warehouse_supervisor")
+  assert.equal(getNextWorkflowStep("warehouse_supervisor"), "complete")
+})
+
+test("warehouse receipt follows the configured warehouse responsible user", () => {
+  const order = { currentStep: "warehouse_receipt", waitingForUserId: "user-admin" }
+  assert.equal(isOrderWaitingForUser(order, "user-warehouse", "user-warehouse"), true)
+  assert.equal(isOrderWaitingForUser(order, "user-admin", "user-warehouse"), false)
 })
 
 test("workflow notifications render in the active locale", () => {

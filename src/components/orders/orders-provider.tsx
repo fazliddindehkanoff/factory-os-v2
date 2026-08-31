@@ -3,7 +3,18 @@
 import * as React from "react"
 
 import { useSettings } from "@/components/settings/settings-provider"
-import { canCreateRequestForApplicant, canUserViewRejectedOrder, shouldSkipSupervisorApproval, type OrderRecord, type WorkflowNotification, type WorkflowNotificationEvent, type WorkflowStep } from "@/lib/orders"
+import {
+  canCreateRequestForApplicant,
+  canUserViewRejectedOrder,
+  getNextWorkflowStep,
+  resolveOrderApplicantId,
+  shouldSkipSupervisorApproval,
+  type OrderRecord,
+  type WorkflowHistoryEntry,
+  type WorkflowNotification,
+  type WorkflowNotificationEvent,
+  type WorkflowStep,
+} from "@/lib/orders"
 import { hasPermission, type PermissionCode } from "@/lib/rbac"
 
 const initialOrders: OrderRecord[] = [
@@ -156,15 +167,19 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
                 waitingForUserId: supervisorId,
               }
             : order
-          if (normalized.currentStep !== "warehouse" || normalized.status !== "warehouse_check") {
-            return normalized
+          const withHistory = {
+            ...normalized,
+            workflowHistory: normalized.workflowHistory ?? [],
+          }
+          if (withHistory.currentStep !== "warehouse" || withHistory.status !== "warehouse_check") {
+            return withHistory
           }
           const warehouseResponsibleUserId = settings.warehouses.find(
-            (warehouse) => warehouse.id === normalized.warehouseId,
+            (warehouse) => warehouse.id === withHistory.warehouseId,
           )?.responsibleUserId
-          return normalized.waitingForUserId === warehouseResponsibleUserId
-            ? normalized
-            : { ...normalized, waitingForUserId: warehouseResponsibleUserId }
+          return withHistory.waitingForUserId === warehouseResponsibleUserId
+            ? withHistory
+            : { ...withHistory, waitingForUserId: warehouseResponsibleUserId }
         }))
       }
       if (savedNotifications) setNotifications(JSON.parse(savedNotifications) as WorkflowNotification[])
@@ -196,8 +211,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
           user.departmentIds.some((id) => order.departmentIds.includes(id)),
       )?.id
     }
-    if (step === "warehouse") return data.warehouses.find((warehouse) => warehouse.id === order.warehouseId)?.responsibleUserId
-    if (step === "sourcing" && order.procurementSpecialistUserId) {
+    if (["warehouse", "warehouse_receipt"].includes(step)) {
+      return data.warehouses.find((warehouse) => warehouse.id === order.warehouseId)?.responsibleUserId
+    }
+    if (["sourcing", "procurement_order"].includes(step) && order.procurementSpecialistUserId) {
       return order.procurementSpecialistUserId
     }
     const roleByStep: Partial<Record<WorkflowStep, string>> = {
@@ -206,8 +223,17 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       sourcing: "role-procurement_manager",
       price_check: "role-procurement_head",
       director: "role-director",
+      procurement_order: "role-procurement_manager",
+      procurement_supervisor: "role-procurement_head",
+      warehouse_supervisor: "role-warehouse_head",
     }
-    return data.users.find((user) => roleByStep[step] && user.roleIds.includes(roleByStep[step]!))?.id
+    const roleId = roleByStep[step]
+    const assignee = data.users.find((user) => roleId && user.roleIds.includes(roleId))
+    if (assignee) return assignee.id
+    if (step === "warehouse_supervisor") {
+      return data.users.find((user) => user.roleIds.includes("role-warehouse"))?.id
+    }
+    return undefined
   }
 
   function notify(userId: string | undefined, order: OrderRecord, event: WorkflowNotificationEvent) {
@@ -216,6 +242,18 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       id: crypto.randomUUID(), userId, orderId: order.id, orderNumber: order.number,
       event, createdAt: new Date().toISOString(), read: false,
     }, ...current])
+  }
+
+  function appendWorkflowHistory(
+    order: Pick<OrderRecord, "workflowHistory">,
+    step: Exclude<WorkflowStep, "complete">,
+    action: WorkflowHistoryEntry["action"],
+    createdAt = new Date().toISOString(),
+  ) {
+    return [
+      ...(order.workflowHistory ?? []),
+      { step, action, actorUserId: currentUserId, createdAt },
+    ] satisfies WorkflowHistoryEntry[]
   }
 
   function hasValidRequestAssignments(
@@ -240,8 +278,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
   function addOrder(order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) {
     const creator = data.users.find((user) => user.id === currentUserId)
-    const requestedApplicant = data.users.find((user) => user.id === order.applicantId)
-    const applicant = creator?.roleIds.includes("role-dept_head") ? creator : requestedApplicant
+    const applicantId = creator
+      ? resolveOrderApplicantId(creator, order.applicantId)
+      : ""
+    const applicant = data.users.find((user) => user.id === applicantId)
     if (
       !can("requests.create") ||
       !creator ||
@@ -252,13 +292,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       throw new Error("The selected applicant is not allowed for this user.")
     }
     const sequence = Math.max(0, ...orders.map((item) => Number(item.number.split("-").at(-1)))) + 1
+    const createdAt = new Date().toISOString()
     const base = {
       ...order,
       applicantId: applicant.id,
       id: `order-${crypto.randomUUID()}`,
       number: `ORD-${new Date().getFullYear()}-${String(sequence).padStart(4, "0")}`,
       createdByUserId: currentUserId,
-      createdAt: new Date().toISOString(),
+      createdAt,
       lastActorUserId: currentUserId,
     }
     const supervisorId = assigneeFor("department_supervisor", base)
@@ -273,6 +314,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       currentStep,
       waitingForUserId: assigneeFor(currentStep, base),
       lines: order.lines.map((line) => ({ ...line, fulfillmentStatus: "pending" })),
+      workflowHistory: skipSupervisor
+        ? [{
+            step: "department_supervisor",
+            action: "skipped",
+            actorUserId: currentUserId,
+            createdAt,
+          }]
+        : [],
     }
     setOrders((current) => [record, ...current])
     notify(record.waitingForUserId, record, { kind: "action_required" })
@@ -288,15 +337,16 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       return undefined
     }
     const creator = data.users.find((user) => user.id === currentUserId)
-    const requestedApplicant = data.users.find((user) => user.id === changes.applicantId)
+    const requestedApplicantId = creator
+      ? resolveOrderApplicantId(creator, changes.applicantId)
+      : ""
+    const requestedApplicant = data.users.find((user) => user.id === requestedApplicantId)
     const departmentSupervisor = data.users.find(
       (user) =>
         user.roleIds.includes("role-dept_head") &&
         user.departmentIds.some((id) => changes.departmentIds.includes(id)),
     )
-    const applicant = creator?.roleIds.includes("role-dept_head")
-      ? creator
-      : creator?.roleIds.includes("role-requester") &&
+    const applicant = creator?.roleIds.includes("role-requester") &&
           !requestedApplicant?.roleIds.includes("role-dept_head")
         ? departmentSupervisor
         : requestedApplicant
@@ -313,6 +363,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     const skipSupervisor = creator.roleIds.includes("role-dept_head") ||
       shouldSkipSupervisorApproval(currentUserId, supervisorId)
     const currentStep: WorkflowStep = skipSupervisor ? "warehouse" : "department_supervisor"
+    const resubmittedAt = new Date().toISOString()
     const updated: OrderRecord = {
       ...existing,
       ...normalizedChanges,
@@ -325,31 +376,43 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         availableQuantity: undefined,
         fulfillmentStatus: "pending",
       })),
+      workflowHistory: skipSupervisor
+        ? appendWorkflowHistory(
+            existing,
+            "department_supervisor",
+            "skipped",
+            resubmittedAt,
+          )
+        : existing.workflowHistory ?? [],
     }
     setOrders((current) => current.map((order) => order.id === orderId ? updated : order))
     notify(updated.waitingForUserId, updated, { kind: "action_required" })
     return updated
   }
 
-  const nextStep: Record<Exclude<WorkflowStep, "complete">, WorkflowStep> = {
-    department_supervisor: "warehouse", warehouse: "chief_engineer", chief_engineer: "procurement_accept",
-    procurement_accept: "sourcing", sourcing: "price_check", price_check: "director", director: "complete",
-  }
-
   function approveOrder(orderId: string) {
     const order = orders.find((item) => item.id === orderId)
+    const completesOperationalTask =
+      (order?.currentStep === "procurement_order" && can("procurement.quote")) ||
+      (order?.currentStep === "warehouse_receipt" && can("warehouse.receive"))
     if (
       !order ||
-      !can("approvals.approve") ||
+      (!can("approvals.approve") && !completesOperationalTask) ||
       order.waitingForUserId !== currentUserId ||
       order.currentStep === "complete" ||
       ["warehouse", "procurement_accept", "sourcing", "price_check"].includes(order.currentStep)
     ) return
-    const step = nextStep[order.currentStep]
+    const step = getNextWorkflowStep(order.currentStep)
     const waitingForUserId = step === "complete" ? undefined : assigneeFor(step, order)
+    if (step !== "complete" && !waitingForUserId) return
     const updated: OrderRecord = {
       ...order, currentStep: step, waitingForUserId, lastActorUserId: currentUserId,
       status: step === "complete" ? "approved" : step === "warehouse" ? "warehouse_check" : "in_progress",
+      workflowHistory: appendWorkflowHistory(
+        order,
+        order.currentStep as Exclude<WorkflowStep, "complete">,
+        completesOperationalTask ? "completed" : "approved",
+      ),
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
@@ -364,9 +427,26 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       !order ||
       !can("approvals.reject") ||
       order.waitingForUserId !== currentUserId ||
-      ["procurement_accept", "sourcing", "price_check"].includes(order.currentStep)
+      [
+        "procurement_accept",
+        "sourcing",
+        "price_check",
+        "procurement_order",
+        "warehouse_receipt",
+      ].includes(order.currentStep)
     ) return
-    const updated = { ...order, status: "rejected" as const, currentStep: "complete" as const, waitingForUserId: undefined, lastActorUserId: currentUserId }
+    const updated = {
+      ...order,
+      status: "rejected" as const,
+      currentStep: "complete" as const,
+      waitingForUserId: undefined,
+      lastActorUserId: currentUserId,
+      workflowHistory: appendWorkflowHistory(
+        order,
+        order.currentStep as Exclude<WorkflowStep, "complete">,
+        "rejected",
+      ),
+    }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const supervisorUserId = assigneeFor("department_supervisor", order)
     setNotifications((current) => current.filter(
@@ -392,6 +472,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     const updated: OrderRecord = {
       ...order, lines, currentStep: next, waitingForUserId, lastActorUserId: currentUserId,
       status: fullyFulfilled ? "fulfilled" : "in_progress",
+      workflowHistory: appendWorkflowHistory(order, "warehouse", "completed"),
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const fulfilledCount = lines.filter((line) => line.fulfillmentStatus === "fulfilled_from_stock").length
@@ -427,6 +508,9 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       waitingForUserId: order.currentStep === "price_check" ? order.waitingForUserId : specialist.id,
       lastActorUserId: currentUserId,
       status: "in_progress",
+      workflowHistory: beginsSourcing
+        ? appendWorkflowHistory(order, "procurement_accept", "completed")
+        : order.workflowHistory,
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
@@ -450,6 +534,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       waitingForUserId,
       lastActorUserId: currentUserId,
       status: "in_progress",
+      workflowHistory: appendWorkflowHistory(order, "sourcing", "completed"),
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
@@ -478,6 +563,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       waitingForUserId,
       lastActorUserId: currentUserId,
       status: "in_progress",
+      workflowHistory: appendWorkflowHistory(
+        order,
+        "price_check",
+        approved ? "approved" : "returned",
+      ),
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     notify(

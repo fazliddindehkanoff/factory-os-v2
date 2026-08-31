@@ -128,3 +128,9 @@
     @apply font-sans;
   }
 }
+
+@media (min-width: 640px) {
+  html {
+    font-size: 90%;
+  }
+}

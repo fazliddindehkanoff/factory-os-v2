@@ -1,8 +1,35 @@
 export type OrderType = "material" | "service"
 export type OrderStatus = "supervisor_review" | "warehouse_check" | "in_progress" | "fulfilled" | "approved" | "rejected" | "draft"
 export type UrgencyLevel = "normal" | "high" | "urgent" | "critical"
-export type WorkflowStep = "department_supervisor" | "warehouse" | "chief_engineer" | "procurement_accept" | "sourcing" | "price_check" | "director" | "complete"
+export const workflowSteps = [
+  "department_supervisor",
+  "warehouse",
+  "chief_engineer",
+  "procurement_accept",
+  "sourcing",
+  "price_check",
+  "director",
+  "procurement_order",
+  "procurement_supervisor",
+  "warehouse_receipt",
+  "warehouse_supervisor",
+] as const
+export type WorkflowStep = (typeof workflowSteps)[number] | "complete"
 export type FulfillmentStatus = "pending" | "fulfilled_from_stock" | "needs_procurement"
+
+export function getNextWorkflowStep(
+  step: Exclude<WorkflowStep, "complete">,
+): WorkflowStep {
+  const index = workflowSteps.indexOf(step)
+  return workflowSteps[index + 1] ?? "complete"
+}
+
+export type WorkflowHistoryEntry = {
+  step: Exclude<WorkflowStep, "complete">
+  action: "approved" | "completed" | "rejected" | "returned" | "skipped"
+  actorUserId?: string
+  createdAt: string
+}
 
 export type WorkflowNotificationEvent =
   | { kind: "action_required" }
@@ -141,6 +168,7 @@ export type OrderRecord = {
   procurementSpecialistUserId?: string
   lastActorUserId: string
   createdAt: string
+  workflowHistory?: WorkflowHistoryEntry[]
 }
 
 export function shouldSkipSupervisorApproval(createdByUserId: string, supervisorUserId?: string) {
@@ -157,13 +185,25 @@ export function canCreateRequestForApplicant(
   )
 }
 
+export function resolveOrderApplicantId(
+  creator: { id: string; roleIds: readonly string[] },
+  requestedApplicantId?: string,
+) {
+  return creator.roleIds.includes("role-requester")
+    ? requestedApplicantId ?? ""
+    : creator.id
+}
+
 export function isOrderWaitingForUser(
   order: Pick<OrderRecord, "currentStep" | "waitingForUserId">,
   userId?: string,
   warehouseResponsibleUserId?: string,
 ) {
   if (!userId) return false
-  if (order.currentStep === "warehouse" && warehouseResponsibleUserId) {
+  if (
+    ["warehouse", "warehouse_receipt"].includes(order.currentStep) &&
+    warehouseResponsibleUserId
+  ) {
     return warehouseResponsibleUserId === userId
   }
   return order.waitingForUserId === userId

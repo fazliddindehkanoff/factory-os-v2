@@ -129,7 +129,17 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     if (!ordersReady || !storageReady) return storedCases
     const procurementOrders = orders.filter((order) =>
       order.lines.some((line) => line.fulfillmentStatus === "needs_procurement") &&
-      ["procurement_accept", "sourcing", "price_check", "director", "complete"].includes(order.currentStep),
+      [
+        "procurement_accept",
+        "sourcing",
+        "price_check",
+        "director",
+        "procurement_order",
+        "procurement_supervisor",
+        "warehouse_receipt",
+        "warehouse_supervisor",
+        "complete",
+      ].includes(order.currentStep),
     )
     const next = [...storedCases]
     for (const order of procurementOrders) {
@@ -324,7 +334,14 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   const visibleOrderIds = new Set(
     orders
       .filter((order) => can("procurement.view") || (
-        isDirector && ["director", "complete"].includes(order.currentStep)
+        isDirector && [
+          "director",
+          "procurement_order",
+          "procurement_supervisor",
+          "warehouse_receipt",
+          "warehouse_supervisor",
+          "complete",
+        ].includes(order.currentStep)
       ))
       .map((order) => order.id),
   )
