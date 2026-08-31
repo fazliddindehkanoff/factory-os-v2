@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto"
-import { eq, sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 import { db } from "@/db/client"
-import { productCategories, products, unitTypes } from "@/db/schema"
+import { productCategories, products } from "@/db/schema"
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
-import { parseNewProductInput } from "@/lib/product-input"
+import { generateProductCode, parseNewProductInput } from "@/lib/product-input"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -29,22 +29,17 @@ export async function POST(request: Request) {
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
   const input = parsed.value
-  const [category, unit, existing] = await Promise.all([
-    db.select({ id: productCategories.id }).from(productCategories).where(eq(productCategories.id, input.categoryId)).limit(1),
-    db.select({ id: unitTypes.id }).from(unitTypes).where(eq(unitTypes.id, input.unitTypeId)).limit(1),
-    db.select({ id: products.id }).from(products)
-      .where(sql`lower(${products.code}) = ${input.code.toLocaleLowerCase()}`)
-      .limit(1),
-  ])
+  const category = await db.select({ id: productCategories.id })
+    .from(productCategories)
+    .where(eq(productCategories.id, input.categoryId))
+    .limit(1)
 
-  if (!category.length || !unit.length) {
+  if (!category.length) {
     return NextResponse.json({ error: "invalid-product" }, { status: 400 })
   }
-  if (existing.length) {
-    return NextResponse.json({ error: "product-code-exists" }, { status: 409 })
-  }
 
-  const product = { id: randomUUID(), ...input }
+  const id = randomUUID()
+  const product = { id, code: generateProductCode(id), ...input }
   try {
     await db.insert(products).values({ ...product, isActive: true })
   } catch (error) {

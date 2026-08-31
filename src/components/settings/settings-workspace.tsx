@@ -183,7 +183,6 @@ export function SettingsWorkspace({
           ...localized,
           code: String(form.code),
           categoryId: String(form.categoryId),
-          unitTypeId: String(form.unitTypeId),
         })
         break
       case "roles": {
@@ -559,26 +558,14 @@ function SettingsForm({
         <TextField label={messages.code} name="code" value={form.code} onChange={updateField} />
       ) : null}
       {section === "products" ? (
-        <>
-          <SelectField
-            label={messages.category}
-            name="categoryId"
-            value={form.categoryId}
-            onChange={updateField}
-            placeholder={messages.selectOption}
-            options={data["product-categories"].map((item) => ({ value: item.id, label: getLocalizedTitle(item, lang) }))}
-          />
-          <SelectField
-            label={messages.unitType}
-            name="unitTypeId"
-            value={form.unitTypeId}
-            onChange={updateField}
-            placeholder={messages.selectOption}
-            options={[...data["unit-types"]]
-              .sort((a, b) => a.order - b.order)
-              .map((item) => ({ value: item.id, label: `${item.order}. ${getLocalizedTitle(item, lang)} (${item.code})` }))}
-          />
-        </>
+        <SelectField
+          label={messages.category}
+          name="categoryId"
+          value={form.categoryId}
+          onChange={updateField}
+          placeholder={messages.selectOption}
+          options={data["product-categories"].map((item) => ({ value: item.id, label: getLocalizedTitle(item, lang) }))}
+        />
       ) : null}
       {section === "roles" ? (
         <RolePermissionMatrix
@@ -778,7 +765,7 @@ function getColumns(section: SettingsSection, messages: Messages) {
     case "unit-types":
       return [messages.order, messages.code, messages.title]
     case "products":
-      return [messages.code, messages.title, messages.category, messages.unitType]
+      return [messages.code, messages.title, messages.category]
     case "roles":
       return [messages.code, messages.title, messages.permissions]
     case "warehouses":
@@ -806,8 +793,7 @@ function matchesSettingsFilters(
   switch (section) {
     case "products": {
       const record = data.products.find((item) => item.id === id)
-      return (!filters.categoryId || record?.categoryId === filters.categoryId) &&
-        (!filters.unitTypeId || record?.unitTypeId === filters.unitTypeId)
+      return !filters.categoryId || record?.categoryId === filters.categoryId
     }
     case "roles":
       return !filters.permission || data.roles.find((item) => item.id === id)?.permissions.includes(filters.permission as PermissionCode)
@@ -838,7 +824,7 @@ function getRows(
   lang: Locale,
 ): SettingsTableRow[] {
   const title = (item: LocalizedTitle) => getLocalizedTitle(item, lang)
-  const findTitle = (items: (LocalizedTitle & { id: string })[], id: string) => {
+  const findTitle = (items: (LocalizedTitle & { id: string })[], id?: string) => {
     const item = items.find((candidate) => candidate.id === id)
     return item ? title(item) : "—"
   }
@@ -854,7 +840,7 @@ function getRows(
     case "unit-types":
       return [...data[section]].sort((a, b) => a.order - b.order).map((item) => ({ id: item.id, order: item.order, cells: [item.order, item.code, title(item)], searchText: `${item.code} ${title(item)}` }))
     case "products":
-      return data.products.map((item) => ({ id: item.id, cells: [item.code, title(item), findTitle(data["product-categories"], item.categoryId), findTitle(data["unit-types"], item.unitTypeId)], searchText: `${item.code} ${title(item)}` }))
+      return data.products.map((item) => ({ id: item.id, cells: [item.code, title(item), findTitle(data["product-categories"], item.categoryId)], searchText: `${item.code} ${title(item)}` }))
     case "roles":
       return data.roles.map((item) => ({
         id: item.id,

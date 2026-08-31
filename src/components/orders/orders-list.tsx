@@ -879,7 +879,7 @@ function OrderDetailsDialog({
                     (item) => item.id === line.productId,
                   );
                   const unit = data["unit-types"].find(
-                    (item) => item.id === product?.unitTypeId,
+                    (item) => item.id === (line.unitTypeId ?? product?.unitTypeId),
                   );
                   const productTitle = product
                     ? getLocalizedTitle(product, lang)

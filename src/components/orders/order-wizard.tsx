@@ -8,6 +8,7 @@ import {
   CheckCircle2Icon,
   FileIcon,
   ImageIcon,
+  LanguagesIcon,
   LoaderCircleIcon,
   PaperclipIcon,
   PlusIcon,
@@ -43,6 +44,7 @@ import { cn } from "@/lib/utils"
 type OrderLine = {
   id: string
   productId: string
+  unitTypeId: string
   quantity: string
   note: string
 }
@@ -65,6 +67,7 @@ type OrderDraft = {
 const emptyLine = (): OrderLine => ({
   id: crypto.randomUUID(),
   productId: "",
+  unitTypeId: "",
   quantity: "",
   note: "",
 })
@@ -207,6 +210,7 @@ function OrderWizardForm({
           lines: revisionOrder.lines.map((line) => ({
             id: line.id,
             productId: line.productId,
+            unitTypeId: line.unitTypeId ?? data.products.find((product) => product.id === line.productId)?.unitTypeId ?? "",
             quantity: String(line.quantity),
             note: line.note,
           })),
@@ -223,7 +227,7 @@ function OrderWizardForm({
           warehouseId: initialWarehouses.length === 1 ? initialWarehouses[0].id : "",
           purposeId: "",
           expectedDate: "",
-          lines: [{ id: "order-line-initial", productId: "", quantity: "", note: "" }],
+          lines: [{ id: "order-line-initial", productId: "", unitTypeId: "", quantity: "", note: "" }],
           comment: "",
           files: [],
           existingAttachmentNames: [],
@@ -344,7 +348,7 @@ function OrderWizardForm({
     setDraft((current) => ({
       ...current,
       lines: current.lines.length === 1
-        ? [{ id: "order-line-reset", productId: "", quantity: "", note: "" }]
+        ? [{ id: "order-line-reset", productId: "", unitTypeId: "", quantity: "", note: "" }]
         : current.lines.filter((line) => line.id !== id),
     }))
   }
@@ -366,7 +370,9 @@ function OrderWizardForm({
       return
     }
     if (step === 2) {
-      const hasInvalidLine = draft.lines.some((line) => !line.productId || Number(line.quantity) <= 0)
+      const hasInvalidLine = draft.lines.some(
+        (line) => !line.productId || !line.unitTypeId || Number(line.quantity) <= 0,
+      )
       if (!draft.purposeId || !draft.expectedDate || hasInvalidLine) {
         setError(hasInvalidLine ? messages.atLeastOnePosition : messages.requiredFields)
         return
@@ -635,8 +641,6 @@ function OrderWizardForm({
             <h2 className="font-semibold">{messages.orderPositions}</h2>
             <div className="space-y-3">
               {draft.lines.map((line, index) => {
-                const product = data.products.find((candidate) => candidate.id === line.productId)
-                const unit = data["unit-types"].find((candidate) => candidate.id === product?.unitTypeId)
                 return (
                   <div key={line.id} className="grid gap-3 rounded-xl border bg-muted/25 p-4 shadow-xs lg:grid-cols-[minmax(14rem,2fr)_minmax(7rem,.7fr)_minmax(8rem,.8fr)_minmax(12rem,1.4fr)_auto] lg:items-start">
                     <Field label={`${index + 1}. ${messages.product}`}>
@@ -664,7 +668,21 @@ function OrderWizardForm({
                       <Input id={`quantity-${line.id}`} type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => updateLine(line.id, "quantity", event.target.value)} />
                     </Field>
                     <Field label={messages.unit}>
-                      <Input disabled value={unit ? `${getLocalizedTitle(unit, lang)} (${unit.code})` : "—"} />
+                      <SearchableSelect
+                        options={[...data["unit-types"]]
+                          .sort((a, b) => a.order - b.order)
+                          .map((unit) => ({
+                            value: unit.id,
+                            label: `${getLocalizedTitle(unit, lang)} (${unit.code})`,
+                            searchValue: `${unit.code} ${unit.titleUz} ${unit.titleRu} ${unit.titleTr}`,
+                          }))}
+                        value={line.unitTypeId}
+                        onChange={(value) => updateLine(line.id, "unitTypeId", value)}
+                        placeholder={messages.selectOption}
+                        searchPlaceholder={messages.searchOptions}
+                        emptyText={messages.noOptions}
+                        ariaLabel={`${messages.unit} ${index + 1}`}
+                      />
                     </Field>
                     <Field label={messages.note} htmlFor={`note-${line.id}`}>
                       <Textarea id={`note-${line.id}`} rows={3} value={line.note} onChange={(event) => updateLine(line.id, "note", event.target.value)} />
@@ -758,7 +776,6 @@ function OrderWizardForm({
           lang={lang}
           messages={messages}
           categories={data["product-categories"]}
-          units={data["unit-types"]}
           initialTitle={productDialog.initialTitle}
           onOpenChange={(open) => { if (!open) setProductDialog(null) }}
           onCreated={selectCreatedProduct}
@@ -772,7 +789,6 @@ function CreateProductDialog({
   lang,
   messages,
   categories,
-  units,
   initialTitle,
   onOpenChange,
   onCreated,
@@ -780,21 +796,19 @@ function CreateProductDialog({
   lang: Locale
   messages: Messages
   categories: ReturnType<typeof useSettings>["data"]["product-categories"]
-  units: ReturnType<typeof useSettings>["data"]["unit-types"]
   initialTitle: string
   onOpenChange: (open: boolean) => void
   onCreated: (product: Product) => void
 }) {
   const [form, setForm] = React.useState(() => ({
-    code: "",
     categoryId: "",
-    unitTypeId: "",
     titleUz: lang === "uz" ? initialTitle : "",
     titleRu: lang === "ru" ? initialTitle : "",
     titleTr: lang === "tr" ? initialTitle : "",
   }))
   const [error, setError] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const [translating, setTranslating] = React.useState(false)
 
   function updateField(name: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [name]: value }))
@@ -803,7 +817,7 @@ function CreateProductDialog({
   async function createProduct(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError("")
-    if (!form.code.trim() || !form.categoryId || !form.unitTypeId) {
+    if (!form.categoryId) {
       setError(messages.requiredFields)
       return
     }
@@ -832,6 +846,40 @@ function CreateProductDialog({
     }
   }
 
+  async function translateTitles() {
+    setError("")
+    const source = [
+      { locale: "uz" as const, value: form.titleUz },
+      { locale: "ru" as const, value: form.titleRu },
+      { locale: "tr" as const, value: form.titleTr },
+    ].find((item) => item.value.trim())
+    if (!source) {
+      setError(messages.oneTitleRequired)
+      return
+    }
+
+    setTranslating(true)
+    try {
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: source.value, sourceLocale: source.locale }),
+      })
+      if (!response.ok) throw new Error("translation-failed")
+      const translated = await response.json() as Record<Locale, string>
+      setForm((current) => ({
+        ...current,
+        titleUz: current.titleUz || translated.uz,
+        titleRu: current.titleRu || translated.ru,
+        titleTr: current.titleTr || translated.tr,
+      }))
+    } catch {
+      setError(messages.translationFailed)
+    } finally {
+      setTranslating(false)
+    }
+  }
+
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-2xl">
@@ -840,10 +888,13 @@ function CreateProductDialog({
             <DialogTitle>{messages.createProduct}</DialogTitle>
             <DialogDescription>{messages.createProductDescription}</DialogDescription>
           </DialogHeader>
+          <div className="pt-4">
+            <Button type="button" variant="outline" onClick={translateTitles} disabled={saving || translating}>
+              {translating ? <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" /> : <LanguagesIcon />}
+              {translating ? messages.translating : messages.autoFillTranslations}
+            </Button>
+          </div>
           <div className="grid gap-4 py-5 sm:grid-cols-2">
-            <Field label={messages.code} htmlFor="new-product-code">
-              <Input id="new-product-code" value={form.code} onChange={(event) => updateField("code", event.target.value)} autoCapitalize="characters" autoFocus />
-            </Field>
             <Field label={messages.category}>
               <SearchableSelect
                 options={categories.map((category) => ({ value: category.id, label: getLocalizedTitle(category, lang) }))}
@@ -855,26 +906,15 @@ function CreateProductDialog({
                 ariaLabel={messages.category}
               />
             </Field>
-            <Field label={messages.unitType}>
-              <SearchableSelect
-                options={units.map((unit) => ({ value: unit.id, label: `${getLocalizedTitle(unit, lang)} (${unit.code})` }))}
-                value={form.unitTypeId}
-                onChange={(value) => updateField("unitTypeId", value)}
-                placeholder={messages.selectOption}
-                searchPlaceholder={messages.searchOptions}
-                emptyText={messages.noOptions}
-                ariaLabel={messages.unitType}
-              />
-            </Field>
             <div className="hidden sm:block" />
             <Field label={messages.titleUz} htmlFor="new-product-title-uz">
-              <Input id="new-product-title-uz" value={form.titleUz} onChange={(event) => updateField("titleUz", event.target.value)} />
+              <Input id="new-product-title-uz" value={form.titleUz} onChange={(event) => updateField("titleUz", event.target.value)} autoFocus={lang === "uz"} />
             </Field>
             <Field label={messages.titleRu} htmlFor="new-product-title-ru">
-              <Input id="new-product-title-ru" value={form.titleRu} onChange={(event) => updateField("titleRu", event.target.value)} />
+              <Input id="new-product-title-ru" value={form.titleRu} onChange={(event) => updateField("titleRu", event.target.value)} autoFocus={lang === "ru"} />
             </Field>
             <Field label={messages.titleTr} htmlFor="new-product-title-tr">
-              <Input id="new-product-title-tr" value={form.titleTr} onChange={(event) => updateField("titleTr", event.target.value)} />
+              <Input id="new-product-title-tr" value={form.titleTr} onChange={(event) => updateField("titleTr", event.target.value)} autoFocus={lang === "tr"} />
             </Field>
           </div>
           {error ? <p role="alert" className="pb-4 text-sm text-destructive">{error}</p> : null}
@@ -1030,7 +1070,7 @@ function ReviewOrder({
           <tbody>
             {draft.lines.map((line, index) => {
               const product = data.products.find((item) => item.id === line.productId)
-              const unit = data["unit-types"].find((item) => item.id === product?.unitTypeId)
+              const unit = data["unit-types"].find((item) => item.id === line.unitTypeId)
               return <tr key={line.id} className="border-b"><td className="p-2">{index + 1}</td><td className="p-2 font-medium">{product ? `${product.code} · ${getLocalizedTitle(product, lang)}` : "—"}</td><td className="p-2">{line.quantity}</td><td className="p-2">{unit ? `${getLocalizedTitle(unit, lang)} (${unit.code})` : "—"}</td><td className="p-2">{line.note || "—"}</td></tr>
             })}
           </tbody>

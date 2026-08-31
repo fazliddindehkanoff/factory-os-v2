@@ -34,7 +34,11 @@ export async function POST(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
-  if (!await userHasPermission(session.userId, "settings.manage")) {
+  const [canManageSettings, canCreateRequests] = await Promise.all([
+    userHasPermission(session.userId, "settings.manage"),
+    userHasPermission(session.userId, "requests.create"),
+  ])
+  if (!canManageSettings && !canCreateRequests) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

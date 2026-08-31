@@ -11,16 +11,12 @@ const references = {
   categories: [
     { id: "category-material", titleUz: "Xomashyo", titleRu: "Сырьё", titleTr: "Hammadde" },
   ],
-  units: [
-    { id: "unit-kilogram", code: "KG", titleUz: "Kilogramm", titleRu: "Килограмм", titleTr: "Kilogram" },
-  ],
 }
 
 test("the product workbook round-trips its editable product fields", async () => {
   const product = {
     code: "MAT-001",
     categoryId: "category-material",
-    unitTypeId: "unit-kilogram",
     titleUz: "Po‘lat",
     titleRu: "Сталь",
     titleTr: "Çelik",
@@ -36,7 +32,6 @@ test("the product importer reports the row for invalid references", async () => 
   const workbook = await createProductsWorkbook([{
     code: "MAT-404",
     categoryId: "missing-category",
-    unitTypeId: "unit-kilogram",
     titleUz: "Noma’lum",
     titleRu: "",
     titleTr: "",

@@ -3,7 +3,7 @@ import { asc, eq, inArray } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 import { db } from "@/db/client"
-import { productCategories, products, unitTypes } from "@/db/schema"
+import { productCategories, products } from "@/db/schema"
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import {
@@ -27,22 +27,13 @@ async function authorize() {
 }
 
 async function getReferences() {
-  const [categories, units] = await Promise.all([
-    db.select({
-      id: productCategories.id,
-      titleUz: productCategories.titleUz,
-      titleRu: productCategories.titleRu,
-      titleTr: productCategories.titleTr,
-    }).from(productCategories).orderBy(asc(productCategories.titleUz)),
-    db.select({
-      id: unitTypes.id,
-      code: unitTypes.code,
-      titleUz: unitTypes.titleUz,
-      titleRu: unitTypes.titleRu,
-      titleTr: unitTypes.titleTr,
-    }).from(unitTypes).orderBy(asc(unitTypes.sortOrder)),
-  ])
-  return { categories, units }
+  const categories = await db.select({
+    id: productCategories.id,
+    titleUz: productCategories.titleUz,
+    titleRu: productCategories.titleRu,
+    titleTr: productCategories.titleTr,
+  }).from(productCategories).orderBy(asc(productCategories.titleUz))
+  return { categories }
 }
 
 async function getActiveProducts() {
@@ -50,7 +41,6 @@ async function getActiveProducts() {
     id: products.id,
     code: products.code,
     categoryId: products.categoryId,
-    unitTypeId: products.unitTypeId,
     titleUz: products.titleUz,
     titleRu: products.titleRu,
     titleTr: products.titleTr,
@@ -120,7 +110,7 @@ export async function POST(request: Request) {
         target: products.code,
         set: {
           categoryId: product.categoryId,
-          unitTypeId: product.unitTypeId,
+          unitTypeId: null,
           titleUz: product.titleUz,
           titleRu: product.titleRu,
           titleTr: product.titleTr,

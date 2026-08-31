@@ -47,6 +47,7 @@ export type WorkflowNotificationEvent =
 export type OrderLineRecord = {
   id: string
   productId: string
+  unitTypeId?: string
   quantity: number
   note: string
   availableQuantity?: number

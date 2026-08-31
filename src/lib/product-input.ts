@@ -1,7 +1,5 @@
 export type NewProductInput = {
-  code: string
   categoryId: string
-  unitTypeId: string
   titleUz: string
   titleRu: string
   titleTr: string
@@ -20,21 +18,23 @@ export function parseNewProductInput(input: unknown): ProductInputResult {
 
   const record = input as Record<string, unknown>
   const value: NewProductInput = {
-    code: readText(record.code).toLocaleUpperCase(),
     categoryId: readText(record.categoryId),
-    unitTypeId: readText(record.unitTypeId),
     titleUz: readText(record.titleUz),
     titleRu: readText(record.titleRu),
     titleTr: readText(record.titleTr),
   }
   const hasTitle = Boolean(value.titleUz || value.titleRu || value.titleTr)
-  const hasRequiredFields = Boolean(value.code && value.categoryId && value.unitTypeId)
-  const hasValidLengths = value.code.length <= 64 &&
-    value.categoryId.length <= 128 &&
-    value.unitTypeId.length <= 128 &&
+  const hasRequiredFields = Boolean(value.categoryId)
+  const hasValidLengths = value.categoryId.length <= 128 &&
     [value.titleUz, value.titleRu, value.titleTr].every((title) => title.length <= 255)
 
   return hasTitle && hasRequiredFields && hasValidLengths
     ? { ok: true, value }
     : { ok: false, error: "invalid-product" }
+}
+
+export function generateProductCode(id: string) {
+  const token = id.replace(/[^a-z0-9]/gi, "").slice(0, 12).toLocaleUpperCase()
+  if (!token) throw new Error("A product id is required to generate its code")
+  return `PRD-${token}`
 }

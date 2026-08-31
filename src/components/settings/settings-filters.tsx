@@ -58,10 +58,7 @@ export function SettingsFilters({
           />
         ) : null}
         {section === "products" ? (
-          <>
-            <FilterSelect label={messages.category} value={value.categoryId ?? ""} onChange={(nextValue) => setFilter("categoryId", nextValue)} messages={messages} options={localizedOptions(data["product-categories"])} />
-            <FilterSelect label={messages.unitType} value={value.unitTypeId ?? ""} onChange={(nextValue) => setFilter("unitTypeId", nextValue)} messages={messages} options={localizedOptions([...data["unit-types"]].sort((a, b) => a.order - b.order))} />
-          </>
+          <FilterSelect label={messages.category} value={value.categoryId ?? ""} onChange={(nextValue) => setFilter("categoryId", nextValue)} messages={messages} options={localizedOptions(data["product-categories"])} />
         ) : null}
         {section === "roles" ? (
           <FilterSelect label={messages.permissions} value={value.permission ?? ""} onChange={(nextValue) => setFilter("permission", nextValue)} messages={messages} options={permissionCatalog.map((permission) => ({ value: permission.code, label: getPermissionLabel(permission.code, lang) }))} />

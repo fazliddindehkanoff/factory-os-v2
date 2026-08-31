@@ -10,14 +10,11 @@ const productColumns = [
   { header: "Title (Turkish)", key: "titleTr", width: 30 },
   { header: "Category ID", key: "categoryId", width: 24 },
   { header: "Category", key: "category", width: 28 },
-  { header: "Unit code", key: "unitCode", width: 16 },
-  { header: "Unit", key: "unit", width: 24 },
 ] as const
 
 export type ProductWorkbookProduct = {
   code: string
   categoryId: string
-  unitTypeId: string
   titleUz: string
   titleRu: string
   titleTr: string
@@ -30,17 +27,8 @@ export type ProductWorkbookCategory = {
   titleTr: string
 }
 
-export type ProductWorkbookUnit = {
-  id: string
-  code: string
-  titleUz: string
-  titleRu: string
-  titleTr: string
-}
-
 export type ProductWorkbookReferences = {
   categories: ProductWorkbookCategory[]
-  units: ProductWorkbookUnit[]
 }
 
 export type ProductImportIssue = {
@@ -113,14 +101,12 @@ export async function createProductsWorkbook(
   workbook.subject = "Factory OS product catalog"
 
   const categoryById = new Map(references.categories.map((category) => [category.id, category]))
-  const unitById = new Map(references.units.map((unit) => [unit.id, unit]))
   const productsSheet = workbook.addWorksheet(PRODUCT_SHEET_NAME, {
     properties: { defaultRowHeight: 22 },
   })
   productsSheet.columns = productColumns.map((column) => ({ ...column }))
   productsSheet.addRows(products.map((product) => {
     const category = categoryById.get(product.categoryId)
-    const unit = unitById.get(product.unitTypeId)
     return {
       code: product.code,
       titleUz: product.titleUz,
@@ -128,8 +114,6 @@ export async function createProductsWorkbook(
       titleTr: product.titleTr,
       categoryId: product.categoryId,
       category: category ? localizedLabel(category) : "",
-      unitCode: unit?.code ?? "",
-      unit: unit ? localizedLabel(unit) : "",
     }
   }))
   finishSheet(productsSheet, productColumns.length)
@@ -146,20 +130,7 @@ export async function createProductsWorkbook(
   categoriesSheet.addRows(references.categories)
   finishSheet(categoriesSheet, 4)
 
-  const unitsSheet = workbook.addWorksheet("Unit Types", {
-    properties: { defaultRowHeight: 22 },
-  })
-  unitsSheet.columns = [
-    { header: "Code", key: "code", width: 18 },
-    { header: "Uzbek", key: "titleUz", width: 30 },
-    { header: "Russian", key: "titleRu", width: 30 },
-    { header: "Turkish", key: "titleTr", width: 30 },
-  ]
-  unitsSheet.addRows(references.units)
-  finishSheet(unitsSheet, 4)
-
   const categoryRangeEnd = Math.max(2, references.categories.length + 1)
-  const unitRangeEnd = Math.max(2, references.units.length + 1)
   for (let rowNumber = 2; rowNumber <= MAX_PRODUCT_ROWS + 1; rowNumber += 1) {
     productsSheet.getCell(`E${rowNumber}`).dataValidation = {
       type: "list",
@@ -169,15 +140,6 @@ export async function createProductsWorkbook(
       errorStyle: "error",
       errorTitle: "Invalid category",
       error: "Choose a Category ID from the Categories sheet.",
-    }
-    productsSheet.getCell(`G${rowNumber}`).dataValidation = {
-      type: "list",
-      allowBlank: false,
-      formulae: [`'Unit Types'!$A$2:$A$${unitRangeEnd}`],
-      showErrorMessage: true,
-      errorStyle: "error",
-      errorTitle: "Invalid unit",
-      error: "Choose a Unit code from the Unit Types sheet.",
     }
   }
 
@@ -191,7 +153,6 @@ const requiredHeaders = [
   "title (russian)",
   "title (turkish)",
   "category id",
-  "unit code",
 ] as const
 
 function normalizeHeader(value: string) {
@@ -235,7 +196,6 @@ export async function parseProductsWorkbook(
   }
 
   const categoryIds = new Set(references.categories.map((category) => category.id))
-  const unitByCode = new Map(references.units.map((unit) => [unit.code.toLocaleUpperCase(), unit]))
   const seenCodes = new Set<string>()
   const issues: ProductImportIssue[] = []
   const products: ProductWorkbookProduct[] = []
@@ -248,13 +208,10 @@ export async function parseProductsWorkbook(
     const titleRu = cellText(row, columns["title (russian)"])
     const titleTr = cellText(row, columns["title (turkish)"])
     const categoryId = cellText(row, columns["category id"])
-    const rawUnitCode = cellText(row, columns["unit code"])
 
-    if (![rawCode, titleUz, titleRu, titleTr, categoryId, rawUnitCode].some(Boolean)) continue
+    if (![rawCode, titleUz, titleRu, titleTr, categoryId].some(Boolean)) continue
 
     const code = rawCode.toLocaleUpperCase()
-    const unitCode = rawUnitCode.toLocaleUpperCase()
-    const unit = unitByCode.get(unitCode)
 
     if (!code) issues.push({ row: rowNumber, message: "Code is required." })
     if (!titleUz && !titleRu && !titleTr) {
@@ -263,19 +220,15 @@ export async function parseProductsWorkbook(
     if (!categoryIds.has(categoryId)) {
       issues.push({ row: rowNumber, message: `Unknown Category ID: ${categoryId || "(blank)"}.` })
     }
-    if (!unit) {
-      issues.push({ row: rowNumber, message: `Unknown Unit code: ${unitCode || "(blank)"}.` })
-    }
     if (seenCodes.has(code)) {
       issues.push({ row: rowNumber, message: `Duplicate product code in workbook: ${code}.` })
     }
     seenCodes.add(code)
 
-    if (code && (titleUz || titleRu || titleTr) && categoryIds.has(categoryId) && unit) {
+    if (code && (titleUz || titleRu || titleTr) && categoryIds.has(categoryId)) {
       products.push({
         code,
         categoryId,
-        unitTypeId: unit.id,
         titleUz,
         titleRu,
         titleTr,

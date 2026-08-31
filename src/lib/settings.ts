@@ -31,7 +31,7 @@ export type UnitType = BaseRecord & { code: string; order: number }
 export type Product = BaseRecord & {
   code: string
   categoryId: string
-  unitTypeId: string
+  unitTypeId?: string
 }
 export type Role = BaseRecord & {
   code: string

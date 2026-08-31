@@ -44,7 +44,7 @@ export default async function LocaleLayout({
 
   if (!isLocale(lang)) notFound()
   const session = await getSessionUser()
-  const initialProducts = session ? await db.select({
+  const storedProducts = session ? await db.select({
     id: products.id,
     code: products.code,
     categoryId: products.categoryId,
@@ -53,6 +53,10 @@ export default async function LocaleLayout({
     titleRu: products.titleRu,
     titleTr: products.titleTr,
   }).from(products).where(eq(products.isActive, true)).orderBy(asc(products.code)) : undefined
+  const initialProducts = storedProducts?.map((product) => ({
+    ...product,
+    unitTypeId: product.unitTypeId ?? undefined,
+  }))
 
   return (
     <html
