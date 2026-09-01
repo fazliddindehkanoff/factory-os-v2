@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs"
 
+import { PRODUCT_TITLE_MAX_LENGTH } from "./product-constraints.js"
+
 const PRODUCT_SHEET_NAME = "Products"
 const MAX_PRODUCT_ROWS = 5_000
 
@@ -132,6 +134,17 @@ export async function createProductsWorkbook(
 
   const categoryRangeEnd = Math.max(2, references.categories.length + 1)
   for (let rowNumber = 2; rowNumber <= MAX_PRODUCT_ROWS + 1; rowNumber += 1) {
+    for (const column of ["B", "C", "D"]) {
+      productsSheet.getCell(`${column}${rowNumber}`).dataValidation = {
+        type: "textLength",
+        operator: "lessThanOrEqual",
+        formulae: [PRODUCT_TITLE_MAX_LENGTH],
+        showErrorMessage: true,
+        errorStyle: "error",
+        errorTitle: "Product title is too long",
+        error: `Product titles cannot exceed ${PRODUCT_TITLE_MAX_LENGTH} characters.`,
+      }
+    }
     productsSheet.getCell(`E${rowNumber}`).dataValidation = {
       type: "list",
       allowBlank: false,
@@ -217,6 +230,12 @@ export async function parseProductsWorkbook(
     if (!titleUz && !titleRu && !titleTr) {
       issues.push({ row: rowNumber, message: "At least one translated title is required." })
     }
+    if ([titleUz, titleRu, titleTr].some((title) => title.length > PRODUCT_TITLE_MAX_LENGTH)) {
+      issues.push({
+        row: rowNumber,
+        message: `Product titles cannot exceed ${PRODUCT_TITLE_MAX_LENGTH} characters.`,
+      })
+    }
     if (!categoryIds.has(categoryId)) {
       issues.push({ row: rowNumber, message: `Unknown Category ID: ${categoryId || "(blank)"}.` })
     }
@@ -225,7 +244,12 @@ export async function parseProductsWorkbook(
     }
     seenCodes.add(code)
 
-    if (code && (titleUz || titleRu || titleTr) && categoryIds.has(categoryId)) {
+    if (
+      code &&
+      (titleUz || titleRu || titleTr) &&
+      [titleUz, titleRu, titleTr].every((title) => title.length <= PRODUCT_TITLE_MAX_LENGTH) &&
+      categoryIds.has(categoryId)
+    ) {
       products.push({
         code,
         categoryId,

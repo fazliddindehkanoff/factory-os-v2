@@ -1,3 +1,7 @@
+import { PRODUCT_TITLE_MAX_LENGTH } from "./product-constraints.js"
+
+export { PRODUCT_TITLE_MAX_LENGTH } from "./product-constraints.js"
+
 export type NewProductInput = {
   categoryId: string
   titleUz: string
@@ -26,7 +30,8 @@ export function parseNewProductInput(input: unknown): ProductInputResult {
   const hasTitle = Boolean(value.titleUz || value.titleRu || value.titleTr)
   const hasRequiredFields = Boolean(value.categoryId)
   const hasValidLengths = value.categoryId.length <= 128 &&
-    [value.titleUz, value.titleRu, value.titleTr].every((title) => title.length <= 255)
+    [value.titleUz, value.titleRu, value.titleTr]
+      .every((title) => title.length <= PRODUCT_TITLE_MAX_LENGTH)
 
   return hasTitle && hasRequiredFields && hasValidLengths
     ? { ok: true, value }

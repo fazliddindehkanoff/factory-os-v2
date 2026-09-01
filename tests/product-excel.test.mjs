@@ -46,3 +46,25 @@ test("the product importer reports the row for invalid references", async () => 
     },
   )
 })
+
+test("the product importer rejects titles longer than one hundred characters", async () => {
+  const workbook = await createProductsWorkbook([{
+    code: "MAT-100",
+    categoryId: "category-material",
+    titleUz: "a".repeat(101),
+    titleRu: "",
+    titleTr: "",
+  }], references)
+
+  await assert.rejects(
+    parseProductsWorkbook(workbook, references),
+    (error) => {
+      assert.equal(error instanceof ProductWorkbookValidationError, true)
+      assert.equal(
+        error.issues.some((issue) => issue.row === 2 && issue.message.includes("100 characters")),
+        true,
+      )
+      return true
+    },
+  )
+})

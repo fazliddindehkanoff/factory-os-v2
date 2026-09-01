@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
 import { saveOrderAttachments } from "@/lib/order-attachments"
 import { truncateLabel, type OrderAttachment, type OrderRecord } from "@/lib/orders"
+import { PRODUCT_TITLE_MAX_LENGTH } from "@/lib/product-input"
 import { getLocalizedTitle, type Product } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -803,9 +804,9 @@ function CreateProductDialog({
 }) {
   const [form, setForm] = React.useState(() => ({
     categoryId: "",
-    titleUz: lang === "uz" ? initialTitle : "",
-    titleRu: lang === "ru" ? initialTitle : "",
-    titleTr: lang === "tr" ? initialTitle : "",
+    titleUz: lang === "uz" ? initialTitle.slice(0, PRODUCT_TITLE_MAX_LENGTH) : "",
+    titleRu: lang === "ru" ? initialTitle.slice(0, PRODUCT_TITLE_MAX_LENGTH) : "",
+    titleTr: lang === "tr" ? initialTitle.slice(0, PRODUCT_TITLE_MAX_LENGTH) : "",
   }))
   const [error, setError] = React.useState("")
   const [saving, setSaving] = React.useState(false)
@@ -824,6 +825,10 @@ function CreateProductDialog({
     }
     if (![form.titleUz, form.titleRu, form.titleTr].some((title) => title.trim())) {
       setError(messages.oneTitleRequired)
+      return
+    }
+    if ([form.titleUz, form.titleRu, form.titleTr].some((title) => title.length > PRODUCT_TITLE_MAX_LENGTH)) {
+      setError(messages.productTitleTooLong)
       return
     }
 
@@ -909,14 +914,15 @@ function CreateProductDialog({
             </Field>
             <div className="hidden sm:block" />
             <Field label={messages.titleUz} htmlFor="new-product-title-uz">
-              <Input id="new-product-title-uz" value={form.titleUz} onChange={(event) => updateField("titleUz", event.target.value)} autoFocus={lang === "uz"} />
+              <Input id="new-product-title-uz" aria-describedby="new-product-title-limit" maxLength={PRODUCT_TITLE_MAX_LENGTH} value={form.titleUz} onChange={(event) => updateField("titleUz", event.target.value)} autoFocus={lang === "uz"} />
             </Field>
             <Field label={messages.titleRu} htmlFor="new-product-title-ru">
-              <Input id="new-product-title-ru" value={form.titleRu} onChange={(event) => updateField("titleRu", event.target.value)} autoFocus={lang === "ru"} />
+              <Input id="new-product-title-ru" aria-describedby="new-product-title-limit" maxLength={PRODUCT_TITLE_MAX_LENGTH} value={form.titleRu} onChange={(event) => updateField("titleRu", event.target.value)} autoFocus={lang === "ru"} />
             </Field>
             <Field label={messages.titleTr} htmlFor="new-product-title-tr">
-              <Input id="new-product-title-tr" value={form.titleTr} onChange={(event) => updateField("titleTr", event.target.value)} autoFocus={lang === "tr"} />
+              <Input id="new-product-title-tr" aria-describedby="new-product-title-limit" maxLength={PRODUCT_TITLE_MAX_LENGTH} value={form.titleTr} onChange={(event) => updateField("titleTr", event.target.value)} autoFocus={lang === "tr"} />
             </Field>
+            <p id="new-product-title-limit" className="text-xs text-muted-foreground sm:col-span-2">{messages.productTitleLimit}</p>
           </div>
           {error ? <p role="alert" className="pb-4 text-sm text-destructive">{error}</p> : null}
           <DialogFooter>

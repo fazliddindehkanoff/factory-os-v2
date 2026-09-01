@@ -30,6 +30,21 @@ test("new product input requires a category and one title", () => {
   assert.deepEqual(parseNewProductInput(null), { ok: false, error: "invalid-product" })
 })
 
+test("product titles cannot exceed one hundred characters", () => {
+  assert.equal(parseNewProductInput({
+    categoryId: "category-material",
+    titleUz: "a".repeat(100),
+    titleRu: "",
+    titleTr: "",
+  }).ok, true)
+  assert.deepEqual(parseNewProductInput({
+    categoryId: "category-material",
+    titleUz: "a".repeat(101),
+    titleRu: "",
+    titleTr: "",
+  }), { ok: false, error: "invalid-product" })
+})
+
 test("product codes are generated deterministically from the product id", () => {
   assert.equal(
     generateProductCode("50cdb174-56a2-44d5-922e-d277171f4ec8"),

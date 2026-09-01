@@ -32,6 +32,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { Locale, Messages } from "@/lib/i18n"
+import { PRODUCT_TITLE_MAX_LENGTH } from "@/lib/product-input"
 import { permissionCatalog, type PermissionCode } from "@/lib/rbac"
 import {
   getLocalizedTitle,
@@ -145,6 +146,14 @@ export function SettingsWorkspace({
       ![form.titleUz, form.titleRu, form.titleTr].some((value) => String(value ?? "").trim())
     ) {
       setFormError(messages.oneTitleRequired)
+      return
+    }
+    if (
+      section === "products" &&
+      [form.titleUz, form.titleRu, form.titleTr]
+        .some((value) => String(value ?? "").length > PRODUCT_TITLE_MAX_LENGTH)
+    ) {
+      setFormError(messages.productTitleTooLong)
       return
     }
     const id = editingId ?? `${section}-${crypto.randomUUID()}`
@@ -544,10 +553,13 @@ function SettingsForm({
 }) {
   const localizedFields = section !== "users" ? (
     <>
-      <TextField label={messages.titleUz} name="titleUz" value={form.titleUz} onChange={updateField} required={false} />
-      <TextField label={messages.titleRu} name="titleRu" value={form.titleRu} onChange={updateField} required={false} />
-      <TextField label={messages.titleTr} name="titleTr" value={form.titleTr} onChange={updateField} required={false} />
+      <TextField label={messages.titleUz} name="titleUz" value={form.titleUz} onChange={updateField} required={false} maxLength={section === "products" ? PRODUCT_TITLE_MAX_LENGTH : undefined} descriptionId={section === "products" ? "settings-product-title-limit" : undefined} />
+      <TextField label={messages.titleRu} name="titleRu" value={form.titleRu} onChange={updateField} required={false} maxLength={section === "products" ? PRODUCT_TITLE_MAX_LENGTH : undefined} descriptionId={section === "products" ? "settings-product-title-limit" : undefined} />
+      <TextField label={messages.titleTr} name="titleTr" value={form.titleTr} onChange={updateField} required={false} maxLength={section === "products" ? PRODUCT_TITLE_MAX_LENGTH : undefined} descriptionId={section === "products" ? "settings-product-title-limit" : undefined} />
       <p className="text-xs text-muted-foreground sm:col-span-2">{messages.oneTitleRequired}</p>
+      {section === "products" ? (
+        <p id="settings-product-title-limit" className="text-xs text-muted-foreground sm:col-span-2">{messages.productTitleLimit}</p>
+      ) : null}
     </>
   ) : null
 
@@ -610,18 +622,20 @@ function SettingsForm({
   )
 }
 
-function TextField({ label, name, value, onChange, type = "text", required = true }: {
+function TextField({ label, name, value, onChange, type = "text", required = true, maxLength, descriptionId }: {
   label: string
   name: string
   value: FormValue
   onChange: (name: string, value: FormValue) => void
   type?: string
   required?: boolean
+  maxLength?: number
+  descriptionId?: string
 }) {
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} required={required} value={String(value ?? "")} onChange={(event) => onChange(name, event.target.value)} />
+      <Input id={name} name={name} type={type} required={required} maxLength={maxLength} aria-describedby={descriptionId} value={String(value ?? "")} onChange={(event) => onChange(name, event.target.value)} />
     </div>
   )
 }
