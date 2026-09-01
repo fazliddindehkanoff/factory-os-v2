@@ -10,18 +10,25 @@ export const workflowSteps = [
   "price_check",
   "director",
   "procurement_order",
-  "procurement_supervisor",
   "warehouse_receipt",
-  "warehouse_supervisor",
 ] as const
-export type WorkflowStep = (typeof workflowSteps)[number] | "complete"
+export type LegacyWorkflowStep = "procurement_supervisor" | "warehouse_supervisor"
+export type WorkflowStep = (typeof workflowSteps)[number] | LegacyWorkflowStep | "complete"
 export type FulfillmentStatus = "pending" | "fulfilled_from_stock" | "needs_procurement"
 
 export function getNextWorkflowStep(
   step: Exclude<WorkflowStep, "complete">,
 ): WorkflowStep {
+  if (step === "procurement_supervisor") return "warehouse_receipt"
+  if (step === "warehouse_supervisor") return "complete"
   const index = workflowSteps.indexOf(step)
   return workflowSteps[index + 1] ?? "complete"
+}
+
+export function truncateLabel(value: string, maxLength = 40) {
+  if (value.length <= maxLength) return value
+  if (maxLength <= 1) return "…".slice(0, maxLength)
+  return `${value.slice(0, maxLength - 1).trimEnd()}…`
 }
 
 export type WorkflowHistoryEntry = {

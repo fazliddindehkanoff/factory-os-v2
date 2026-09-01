@@ -996,9 +996,7 @@ function OrderDetailsDialog({
           "price_check",
           "director",
           "procurement_order",
-          "procurement_supervisor",
           "warehouse_receipt",
-          "warehouse_supervisor",
           "complete",
         ].includes(order.currentStep) ? (
           <OrderProcurementPanel order={order} lang={lang} messages={messages} />
@@ -1205,14 +1203,9 @@ function workflowAssignee(
     price_check: "role-procurement_head",
     director: "role-director",
     procurement_order: "role-procurement_manager",
-    procurement_supervisor: "role-procurement_head",
-    warehouse_supervisor: "role-warehouse_head",
   };
   const roleId = roleByStep[step];
-  return data.users.find((user) => roleId && user.roleIds.includes(roleId)) ??
-    (step === "warehouse_supervisor"
-      ? data.users.find((user) => user.roleIds.includes("role-warehouse"))
-      : undefined);
+  return data.users.find((user) => roleId && user.roleIds.includes(roleId));
 }
 
 function OrderFilter({

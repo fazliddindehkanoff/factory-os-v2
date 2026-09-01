@@ -135,9 +135,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
         "price_check",
         "director",
         "procurement_order",
-        "procurement_supervisor",
         "warehouse_receipt",
-        "warehouse_supervisor",
         "complete",
       ].includes(order.currentStep),
     )
@@ -337,9 +335,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
         isDirector && [
           "director",
           "procurement_order",
-          "procurement_supervisor",
           "warehouse_receipt",
-          "warehouse_supervisor",
           "complete",
         ].includes(order.currentStep)
       ))

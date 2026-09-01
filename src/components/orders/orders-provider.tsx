@@ -171,12 +171,28 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
             ...normalized,
             workflowHistory: normalized.workflowHistory ?? [],
           }
-          if (withHistory.currentStep !== "warehouse" || withHistory.status !== "warehouse_check") {
-            return withHistory
-          }
           const warehouseResponsibleUserId = settings.warehouses.find(
             (warehouse) => warehouse.id === withHistory.warehouseId,
           )?.responsibleUserId
+          if (withHistory.currentStep === "procurement_supervisor") {
+            return {
+              ...withHistory,
+              currentStep: "warehouse_receipt" as const,
+              status: "in_progress" as const,
+              waitingForUserId: warehouseResponsibleUserId,
+            }
+          }
+          if (withHistory.currentStep === "warehouse_supervisor") {
+            return {
+              ...withHistory,
+              currentStep: "complete" as const,
+              status: "approved" as const,
+              waitingForUserId: undefined,
+            }
+          }
+          if (withHistory.currentStep !== "warehouse" || withHistory.status !== "warehouse_check") {
+            return withHistory
+          }
           return withHistory.waitingForUserId === warehouseResponsibleUserId
             ? withHistory
             : { ...withHistory, waitingForUserId: warehouseResponsibleUserId }
@@ -224,15 +240,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       price_check: "role-procurement_head",
       director: "role-director",
       procurement_order: "role-procurement_manager",
-      procurement_supervisor: "role-procurement_head",
-      warehouse_supervisor: "role-warehouse_head",
     }
     const roleId = roleByStep[step]
     const assignee = data.users.find((user) => roleId && user.roleIds.includes(roleId))
     if (assignee) return assignee.id
-    if (step === "warehouse_supervisor") {
-      return data.users.find((user) => user.roleIds.includes("role-warehouse"))?.id
-    }
     return undefined
   }
 

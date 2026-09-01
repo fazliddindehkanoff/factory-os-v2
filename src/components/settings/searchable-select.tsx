@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils"
 export type SearchableSelectOption = {
   value: string
   label: string
+  selectedLabel?: string
   searchValue?: string
   details?: string[]
 }
@@ -79,7 +80,9 @@ export function SearchableSelect({
         className="flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-input bg-background px-3 py-2 text-left text-sm font-normal shadow-xs outline-none transition-colors hover:bg-accent/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-muted/45 disabled:opacity-65"
       >
         <span className={cn("min-w-0 flex-1 text-left", !selected && "text-muted-foreground")}>
-          <span className="block truncate font-medium">{selected?.label ?? placeholder}</span>
+          <span className="block truncate font-medium">
+            {selected?.selectedLabel ?? selected?.label ?? placeholder}
+          </span>
           {selected?.details?.length ? (
             <span className="mt-0.5 block truncate text-xs font-normal text-muted-foreground">
               {selected.details.join(" | ")}

@@ -1,11 +1,11 @@
 "use client"
 
+import * as React from "react"
+import Link from "next/link"
 import {
-  BadgeCheckIcon,
   ChevronsUpDownIcon,
-  CreditCardIcon,
   LogOutIcon,
-  SparklesIcon,
+  UserRoundIcon,
 } from "lucide-react"
 
 import { logoutAction } from "@/app/[lang]/login/actions"
@@ -39,10 +39,16 @@ export function NavUser({
 }) {
   const { isMobile } = useSidebar()
   const { currentUser, roles } = useAuthorization()
+  const [avatarVersion, setAvatarVersion] = React.useState(0)
+  React.useEffect(() => {
+    const refreshAvatar = () => setAvatarVersion((current) => current + 1)
+    window.addEventListener("factory-os-profile-photo-updated", refreshAvatar)
+    return () => window.removeEventListener("factory-os-profile-photo-updated", refreshAvatar)
+  }, [])
   const user = {
     name: currentUser?.fullName ?? "Factory OS",
     email: currentUser?.username ?? "",
-    avatar: "",
+    avatar: `/api/profile/photo?v=${avatarVersion}`,
   }
   const initials = user.name
     .split(/\s+/)
@@ -94,20 +100,9 @@ export function NavUser({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <SparklesIcon />
-                {messages.upgrade}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <BadgeCheckIcon />
-                {messages.account}
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <CreditCardIcon />
-                {messages.billing}
+              <DropdownMenuItem render={<Link href={`/${lang}/profile`} />}>
+                <UserRoundIcon />
+                {messages.profile}
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

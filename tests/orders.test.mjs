@@ -11,6 +11,7 @@ import {
   resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
   workflowSteps,
+  truncateLabel,
 } from "../src/lib/orders.ts"
 
 test("assistant-created requests still require the selected supervisor approval", () => {
@@ -67,18 +68,22 @@ test("warehouse-stage requests follow the configured warehouse responsible user"
   assert.equal(isOrderWaitingForUser(staleOrder, "user-admin", "user-warehouse"), false)
 })
 
-test("procured orders pass through operational work and both final supervisors", () => {
-  assert.deepEqual(workflowSteps.slice(-4), [
+test("procured orders move directly from ordering to warehouse receipt", () => {
+  assert.deepEqual(workflowSteps.slice(-2), [
     "procurement_order",
-    "procurement_supervisor",
     "warehouse_receipt",
-    "warehouse_supervisor",
   ])
   assert.equal(getNextWorkflowStep("director"), "procurement_order")
-  assert.equal(getNextWorkflowStep("procurement_order"), "procurement_supervisor")
-  assert.equal(getNextWorkflowStep("procurement_supervisor"), "warehouse_receipt")
-  assert.equal(getNextWorkflowStep("warehouse_receipt"), "warehouse_supervisor")
-  assert.equal(getNextWorkflowStep("warehouse_supervisor"), "complete")
+  assert.equal(getNextWorkflowStep("procurement_order"), "warehouse_receipt")
+  assert.equal(getNextWorkflowStep("warehouse_receipt"), "complete")
+})
+
+test("selected product labels are capped at forty characters", () => {
+  const label = "PRD-20260901-ABCDEFGH · A deliberately long product title"
+  const truncated = truncateLabel(label, 40)
+  assert.equal(truncated.length <= 40, true)
+  assert.equal(truncated.endsWith("…"), true)
+  assert.equal(truncateLabel("Short product", 40), "Short product")
 })
 
 test("warehouse receipt follows the configured warehouse responsible user", () => {

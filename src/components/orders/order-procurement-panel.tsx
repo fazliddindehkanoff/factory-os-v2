@@ -56,9 +56,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   const directorCanReviewCosts = isDirector && [
     "director",
     "procurement_order",
-    "procurement_supervisor",
     "warehouse_receipt",
-    "warehouse_supervisor",
     "complete",
   ].includes(order.currentStep)
   const selectedQuotation = caseQuotes.find((quotation) => quotation.selected)

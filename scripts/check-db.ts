@@ -23,11 +23,11 @@ async function checkDatabase() {
   if (orderCount !== 3) throw new Error(`Expected 3 seeded orders, found ${orderCount}`)
   if (departmentCount !== 2) throw new Error(`Expected 2 departments with supervisors, found ${departmentCount}`)
   if (publishedVersions.length !== 1) throw new Error(`Expected 1 published workflow, found ${publishedVersions.length}`)
-  if (steps.length !== 11 || steps.some((step, index) => step.order !== index + 1)) {
-    throw new Error("The default workflow must contain eleven ordered steps")
+  if (steps.length !== 9 || steps.some((step, index) => step.order !== index + 1)) {
+    throw new Error("The default workflow must contain nine ordered steps")
   }
 
-  console.log("Database check passed: 3 orders, 2 supervised departments, 1 published workflow, 11 ordered steps")
+  console.log("Database check passed: 3 orders, 2 supervised departments, 1 published workflow, 9 ordered steps")
 }
 
 checkDatabase()

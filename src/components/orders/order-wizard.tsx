@@ -37,7 +37,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
 import { saveOrderAttachments } from "@/lib/order-attachments"
-import type { OrderAttachment, OrderRecord } from "@/lib/orders"
+import { truncateLabel, type OrderAttachment, type OrderRecord } from "@/lib/orders"
 import { getLocalizedTitle, type Product } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -649,6 +649,7 @@ function OrderWizardForm({
                           options={data.products.map((item) => ({
                             value: item.id,
                             label: `${item.code} · ${getLocalizedTitle(item, lang)}`,
+                            selectedLabel: truncateLabel(`${item.code} · ${getLocalizedTitle(item, lang)}`, 40),
                             searchValue: `${item.code} ${item.titleUz} ${item.titleRu} ${item.titleTr}`,
                           }))}
                           value={line.productId}
