@@ -8,6 +8,7 @@ import {
   getNextWorkflowStep,
   isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
+  normalizeOrderCommentBody,
   resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
   workflowSteps,
@@ -84,6 +85,12 @@ test("selected product labels are capped at forty characters", () => {
   assert.equal(truncated.length <= 40, true)
   assert.equal(truncated.endsWith("…"), true)
   assert.equal(truncateLabel("Short product", 40), "Short product")
+})
+
+test("order comments are trimmed and limited to two thousand characters", () => {
+  assert.equal(normalizeOrderCommentBody("  Ready for review.  "), "Ready for review.")
+  assert.equal(normalizeOrderCommentBody("   "), null)
+  assert.equal(normalizeOrderCommentBody("a".repeat(2_001)), null)
 })
 
 test("warehouse receipt follows the configured warehouse responsible user", () => {

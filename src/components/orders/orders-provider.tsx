@@ -7,6 +7,7 @@ import {
   canCreateRequestForApplicant,
   canUserViewRejectedOrder,
   getNextWorkflowStep,
+  normalizeOrderCommentBody,
   resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
   type OrderRecord,
@@ -99,6 +100,7 @@ type OrdersContextValue = {
   assignProcurementSpecialist: (orderId: string, specialistUserId: string) => boolean
   submitProcurementOffers: (orderId: string) => boolean
   reviewProcurementOffers: (orderId: string, approved: boolean, comment?: string) => boolean
+  addOrderComment: (orderId: string, body: string, replyToId?: string) => boolean
   markNotificationsRead: () => void
   deleteOrders: (ids: string[]) => void
 }
@@ -169,6 +171,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
             : order
           const withHistory = {
             ...normalized,
+            comments: normalized.comments ?? [],
             workflowHistory: normalized.workflowHistory ?? [],
           }
           const warehouseResponsibleUserId = settings.warehouses.find(
@@ -596,13 +599,34 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     setNotifications((current) => current.map((item) => item.userId === currentUserId ? { ...item, read: true } : item))
   }
 
+  function addOrderComment(orderId: string, body: string, replyToId?: string) {
+    const order = orders.find((item) => item.id === orderId)
+    const normalizedBody = normalizeOrderCommentBody(body)
+    if (!currentUserId || !order || !canViewOrder(order) || !normalizedBody) return false
+    if (replyToId && !(order.comments ?? []).some((comment) => comment.id === replyToId)) {
+      return false
+    }
+
+    const comment = {
+      id: crypto.randomUUID(),
+      authorUserId: currentUserId,
+      body: normalizedBody,
+      replyToId,
+      createdAt: new Date().toISOString(),
+    }
+    setOrders((current) => current.map((item) => item.id === orderId
+      ? { ...item, comments: [...(item.comments ?? []), comment] }
+      : item))
+    return true
+  }
+
   function deleteOrders(ids: string[]) {
     if (!can("requests.edit")) return
     setOrders((current) => current.filter((order) => !ids.includes(order.id) || !canViewOrder(order)))
   }
 
   return (
-    <OrdersContext.Provider value={{ orders: visibleOrders, notifications: visibleNotifications, storageReady, addOrder, resubmitOrder, approveOrder, rejectOrder, submitWarehouseReport, assignProcurementSpecialist, submitProcurementOffers, reviewProcurementOffers, markNotificationsRead, deleteOrders }}>
+    <OrdersContext.Provider value={{ orders: visibleOrders, notifications: visibleNotifications, storageReady, addOrder, resubmitOrder, approveOrder, rejectOrder, submitWarehouseReport, assignProcurementSpecialist, submitProcurementOffers, reviewProcurementOffers, addOrderComment, markNotificationsRead, deleteOrders }}>
       {children}
     </OrdersContext.Provider>
   )

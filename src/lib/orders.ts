@@ -68,6 +68,21 @@ export type OrderAttachment = {
   size: number
 }
 
+export const ORDER_COMMENT_MAX_LENGTH = 2_000
+
+export type OrderComment = {
+  id: string
+  authorUserId: string
+  body: string
+  replyToId?: string
+  createdAt: string
+}
+
+export function normalizeOrderCommentBody(value: string) {
+  const body = value.trim()
+  return body && body.length <= ORDER_COMMENT_MAX_LENGTH ? body : null
+}
+
 export type WorkflowNotification = {
   id: string
   userId: string
@@ -178,6 +193,7 @@ export type OrderRecord = {
   comment: string
   attachmentNames: string[]
   attachments?: OrderAttachment[]
+  comments?: OrderComment[]
   status: OrderStatus
   currentStep: WorkflowStep
   waitingForUserId?: string

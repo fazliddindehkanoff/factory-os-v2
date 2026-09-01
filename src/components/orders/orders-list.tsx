@@ -20,6 +20,7 @@ import {
 
 import { AccessDenied } from "@/components/auth/access-denied";
 import { useAuthorization } from "@/components/auth/use-authorization";
+import { OrderComments } from "@/components/orders/order-comments";
 import { OrderProcurementPanel } from "@/components/orders/order-procurement-panel";
 import { useOrders } from "@/components/orders/orders-provider";
 import { useSettings } from "@/components/settings/settings-provider";
@@ -988,6 +989,8 @@ function OrderDetailsDialog({
             {attachmentError ? <p role="alert" className="mt-2 text-xs text-destructive">{attachmentError}</p> : null}
           </div>
         </section>
+
+        <OrderComments order={order} lang={lang} messages={messages} />
 
         {order.lines.some((line) => line.fulfillmentStatus === "needs_procurement") &&
         [
