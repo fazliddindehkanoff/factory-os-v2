@@ -42,8 +42,10 @@ type ProcurementGridRow = {
   purchaseQuantity: number
   assignee: string
   offerCount: number
-  stage: ProcurementStage
+  stage: ProcurementRegisterStage
 }
+
+type ProcurementRegisterStage = ProcurementStage | "not_started"
 
 type SortKey = keyof Pick<
   ProcurementGridRow,
@@ -64,47 +66,38 @@ type SortKey = keyof Pick<
 >
 
 export function ProcurementWorkspace({ lang, messages }: { lang: Locale; messages: Messages }) {
-  const { can, currentUser } = useAuthorization()
+  const { can } = useAuthorization()
   const { orders } = useOrders()
   const { data } = useSettings()
   const { cases, quotations } = useProcurement()
   const [search, setSearch] = React.useState("")
-  const [stageFilter, setStageFilter] = React.useState<ProcurementStage | "all">("all")
+  const [stageFilter, setStageFilter] = React.useState<ProcurementRegisterStage | "all">("all")
   const [sort, setSort] = React.useState<{ key: SortKey; direction: "asc" | "desc" }>({
     key: "updatedAt",
     direction: "desc",
   })
   const copy = procurementOverviewCopy(lang)
-  const isSpecialist = currentUser?.roleIds.includes("role-procurement_manager") ?? false
 
   if (!can("procurement.view")) {
     return <AccessDenied lang={lang} permissions={["procurement.view"]} />
   }
 
-  const visibleCases = isSpecialist
-    ? cases.filter((item) => item.assigneeId === currentUser?.id)
-    : cases
-  const visibleCaseIds = new Set(visibleCases.map((item) => item.id))
-  const visibleQuotations = quotations.filter((item) => visibleCaseIds.has(item.procurementCaseId))
-
-  const rows = visibleCases.flatMap((procurementCase): ProcurementGridRow[] => {
-    const order = orders.find((item) => item.id === procurementCase.orderId)
-    if (!order) return []
-
+  const casesByOrderId = new Map(cases.map((item) => [item.orderId, item]))
+  const rows = orders.flatMap((order): ProcurementGridRow[] => {
+    const procurementCase = casesByOrderId.get(order.id)
     const applicant = data.users.find((item) => item.id === order.applicantId)
-    const assignee = data.users.find((item) => item.id === procurementCase.assigneeId)
+    const assignee = data.users.find((item) => item.id === procurementCase?.assigneeId)
     const warehouse = data.warehouses.find((item) => item.id === order.warehouseId)
     const department = order.departmentIds
       .map((id) => data.departments.find((item) => item.id === id))
       .filter((item) => item !== undefined)
       .map((item) => getLocalizedTitle(item, lang))
       .join(", ")
-    const offerCount = visibleQuotations.filter(
-      (item) => item.procurementCaseId === procurementCase.id,
+    const offerCount = quotations.filter(
+      (item) => item.procurementCaseId === procurementCase?.id,
     ).length
 
     return order.lines
-      .filter((line) => line.fulfillmentStatus === "needs_procurement")
       .map((line) => {
         const product = data.products.find((item) => item.id === line.productId)
         const unit = data["unit-types"].find(
@@ -112,9 +105,9 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
         )
         const available = line.availableQuantity ?? 0
         return {
-          id: `${procurementCase.id}-${line.id}`,
+          id: `${order.id}-${line.id}`,
           orderId: order.id,
-          updatedAt: procurementCase.updatedAt,
+          updatedAt: procurementCase?.updatedAt ?? order.createdAt,
           orderNumber: order.number,
           applicant: applicant?.fullName ?? "—",
           department: department || "—",
@@ -127,7 +120,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
           purchaseQuantity: Math.max(0, line.quantity - available),
           assignee: assignee?.fullName ?? copy.notAssigned,
           offerCount,
-          stage: procurementCase.stage,
+          stage: procurementCase?.stage ?? "not_started",
         }
       })
   })
@@ -151,14 +144,14 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
   const statCards = [
     {
       label: copy.metrics.requests,
-      value: visibleCases.length,
+      value: orders.length,
       note: copy.metrics.requestsNote,
       icon: ShoppingCartIcon,
       tone: "text-primary bg-primary/10",
     },
     {
       label: copy.metrics.awaitingAssignment,
-      value: visibleCases.filter((item) => item.stage === "awaiting_assignment").length,
+      value: cases.filter((item) => item.stage === "awaiting_assignment").length,
       note: copy.metrics.awaitingAssignmentNote,
       icon: UserRoundPlusIcon,
       tone: "text-amber-700 bg-amber-500/10 dark:text-amber-300",
@@ -172,14 +165,14 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
     },
     {
       label: copy.metrics.review,
-      value: visibleCases.filter((item) => item.stage === "head_review").length,
+      value: cases.filter((item) => item.stage === "head_review").length,
       note: copy.metrics.reviewNote,
       icon: ClipboardCheckIcon,
       tone: "text-violet-700 bg-violet-500/10 dark:text-violet-300",
     },
     {
       label: copy.metrics.offers,
-      value: visibleQuotations.length,
+      value: quotations.length,
       note: copy.metrics.offersNote,
       icon: FileSpreadsheetIcon,
       tone: "text-emerald-700 bg-emerald-500/10 dark:text-emerald-300",
@@ -243,12 +236,12 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
             </div>
             <select
               value={stageFilter}
-              onChange={(event) => setStageFilter(event.target.value as ProcurementStage | "all")}
+              onChange={(event) => setStageFilter(event.target.value as ProcurementRegisterStage | "all")}
               aria-label={copy.stageFilter}
               className="h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               <option value="all">{copy.allStages}</option>
-              {(Object.keys(copy.stages) as ProcurementStage[]).map((stage) => (
+              {(Object.keys(copy.stages) as ProcurementRegisterStage[]).map((stage) => (
                 <option key={stage} value={stage}>{copy.stages[stage]}</option>
               ))}
             </select>
@@ -403,7 +396,7 @@ function GridCell({ numeric, className, ...props }: React.ComponentProps<"td"> &
   )
 }
 
-function StageBadge({ stage, copy }: { stage: ProcurementStage; copy: ReturnType<typeof procurementOverviewCopy> }) {
+function StageBadge({ stage, copy }: { stage: ProcurementRegisterStage; copy: ReturnType<typeof procurementOverviewCopy> }) {
   const variant = stage === "approved" ? "default" : stage === "changes_requested" ? "destructive" : stage === "head_review" ? "secondary" : "outline"
   return <Badge variant={variant}>{copy.stages[stage]}</Badge>
 }
@@ -453,7 +446,7 @@ function procurementOverviewCopy(lang: Locale) {
     groups: { request: "Заявка", destination: "Адресат", product: "Товар", procurement: "Снабжение" },
     columns: { updatedAt: "Дата", orderNumber: "Номер заказа", applicant: "Заявитель", department: "Отдел", warehouse: "Склад", product: "Наименование товара", productCode: "Код товара", unit: "Ед. изм.", requested: "Запрошено", available: "На складе", toPurchase: "К закупке", assignee: "Снабженец", offers: "Предложений", stage: "Статус", actions: "Действия" },
     metrics: { requests: "Заявки", requestsNote: "В реестре снабжения", awaitingAssignment: "Без исполнителя", awaitingAssignmentNote: "Ожидают назначения", positions: "Позиции", positionsNote: "Товары к закупке", review: "На проверке", reviewNote: "У руководителя", offers: "Предложения", offersNote: "Коммерческие предложения" },
-    stages: { awaiting_assignment: "Ожидает назначения", collecting_offers: "Сбор предложений", head_review: "Проверка руководителя", changes_requested: "На доработке", approved: "Предложение одобрено" },
+    stages: { not_started: "Ещё не в снабжении", awaiting_assignment: "Ожидает назначения", collecting_offers: "Сбор предложений", head_review: "Проверка руководителя", changes_requested: "На доработке", approved: "Предложение одобрено" },
   }
   if (lang === "tr") return {
     description: "Excel çalışma tablosu biçiminde satın alma talepleri kaydı.",
@@ -464,7 +457,7 @@ function procurementOverviewCopy(lang: Locale) {
     groups: { request: "Sipariş", destination: "Hedef", product: "Ürün", procurement: "Satın alma" },
     columns: { updatedAt: "Tarih", orderNumber: "Sipariş no.", applicant: "Talep eden", department: "Departman", warehouse: "Depo", product: "Ürün adı", productCode: "Ürün kodu", unit: "Birim", requested: "Talep", available: "Stokta", toPurchase: "Satın alınacak", assignee: "Uzman", offers: "Teklif", stage: "Durum", actions: "İşlemler" },
     metrics: { requests: "Siparişler", requestsNote: "Satın alma kaydında", awaitingAssignment: "Atanmamış", awaitingAssignmentNote: "Atama bekliyor", positions: "Kalemler", positionsNote: "Satın alınacak ürünler", review: "İncelemede", reviewNote: "Yönetici bekleniyor", offers: "Teklifler", offersNote: "Ticari teklifler" },
-    stages: { awaiting_assignment: "Atama bekliyor", collecting_offers: "Teklif toplanıyor", head_review: "Yönetici incelemesi", changes_requested: "Yeniden çalışılıyor", approved: "Teklif onaylandı" },
+    stages: { not_started: "Henüz satın almada değil", awaiting_assignment: "Atama bekliyor", collecting_offers: "Teklif toplanıyor", head_review: "Yönetici incelemesi", changes_requested: "Yeniden çalışılıyor", approved: "Teklif onaylandı" },
   }
   return {
     description: "Ta’minot buyurtmalari Excel ishchi jadvali ko‘rinishida.",
@@ -475,6 +468,6 @@ function procurementOverviewCopy(lang: Locale) {
     groups: { request: "Buyurtma", destination: "Manzil", product: "Mahsulot", procurement: "Ta’minot" },
     columns: { updatedAt: "Sana", orderNumber: "Buyurtma raqami", applicant: "Arizachi", department: "Bo‘lim", warehouse: "Ombor", product: "Mahsulot nomi", productCode: "Mahsulot kodi", unit: "O‘lchov birligi", requested: "So‘ralgan", available: "Omborda", toPurchase: "Xarid qilinadi", assignee: "Ta’minotchi", offers: "Takliflar", stage: "Holati", actions: "Amallar" },
     metrics: { requests: "Buyurtmalar", requestsNote: "Ta’minot reyestrida", awaitingAssignment: "Ijrochisiz", awaitingAssignmentNote: "Biriktirish kutilmoqda", positions: "Pozitsiyalar", positionsNote: "Xarid qilinadigan mahsulotlar", review: "Tekshiruvda", reviewNote: "Rahbar harakatini kutmoqda", offers: "Takliflar", offersNote: "Tijorat takliflari" },
-    stages: { awaiting_assignment: "Biriktirish kutilmoqda", collecting_offers: "Takliflar yig‘ilmoqda", head_review: "Rahbar tekshiruvi", changes_requested: "Qayta ishlanmoqda", approved: "Taklif tasdiqlandi" },
+    stages: { not_started: "Hali ta’minotda emas", awaiting_assignment: "Biriktirish kutilmoqda", collecting_offers: "Takliflar yig‘ilmoqda", head_review: "Rahbar tekshiruvi", changes_requested: "Qayta ishlanmoqda", approved: "Taklif tasdiqlandi" },
   }
 }
