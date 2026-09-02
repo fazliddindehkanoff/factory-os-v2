@@ -337,16 +337,13 @@ const SettingsContext = React.createContext<SettingsContextValue | null>(null)
 export function SettingsProvider({
   children,
   initialCurrentUserId = "",
-  initialProducts,
+  initialData,
 }: {
   children: React.ReactNode
   initialCurrentUserId?: string
-  initialProducts?: Product[]
+  initialData?: SettingsData
 }) {
-  const [data, setData] = React.useState(() => ({
-    ...initialSettingsData,
-    products: initialProducts ?? initialSettingsData.products,
-  }))
+  const [data, setData] = React.useState(() => initialData ?? initialSettingsData)
   const currentUserId = initialCurrentUserId
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
