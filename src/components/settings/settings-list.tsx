@@ -97,6 +97,11 @@ export function SettingsList({
   React.useEffect(() => {
     const currentPageIds = pageIdKey ? pageIdKey.split("\u0000") : []
     function handleShortcut(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSelectedIds((current) => current.size ? new Set() : current)
+        return
+      }
+
       const target = event.target as HTMLElement | null
       const isTyping = target?.matches("input, textarea, select, [contenteditable='true']")
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a" && !isTyping) {
