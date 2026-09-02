@@ -9,7 +9,9 @@ type TranslateRequest = {
   sourceLocale?: string
 }
 
-async function translate(text: string, source: Locale, target: Locale) {
+type TranslationSource = Locale | "auto"
+
+async function translate(text: string, source: TranslationSource, target: Locale) {
   if (source === target) return text
 
   const url = new URL("https://translate.googleapis.com/translate_a/single")
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
   const text = body.text?.trim()
   const sourceLocale = body.sourceLocale
 
-  if (!text || !sourceLocale || !isLocale(sourceLocale)) {
+  if (!text || !sourceLocale || (sourceLocale !== "auto" && !isLocale(sourceLocale))) {
     return NextResponse.json({ error: "Invalid translation request" }, { status: 400 })
   }
 

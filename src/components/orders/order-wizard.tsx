@@ -854,12 +854,9 @@ function CreateProductDialog({
 
   async function translateTitles() {
     setError("")
-    const source = [
-      { locale: "uz" as const, value: form.titleUz },
-      { locale: "ru" as const, value: form.titleRu },
-      { locale: "tr" as const, value: form.titleTr },
-    ].find((item) => item.value.trim())
-    if (!source) {
+    const sourceText = [form.titleUz, form.titleRu, form.titleTr]
+      .find((value) => value.trim())
+    if (!sourceText) {
       setError(messages.oneTitleRequired)
       return
     }
@@ -869,7 +866,7 @@ function CreateProductDialog({
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: source.value, sourceLocale: source.locale }),
+        body: JSON.stringify({ text: sourceText, sourceLocale: "auto" }),
       })
       if (!response.ok) throw new Error("translation-failed")
       const translated = await response.json() as Record<Locale, string>

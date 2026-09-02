@@ -242,16 +242,13 @@ export function SettingsWorkspace({
   }
 
   async function requestTranslations(title: LocalizedTitle): Promise<LocalizedTitle> {
-    const source = [
-      { locale: "uz" as const, value: title.titleUz },
-      { locale: "ru" as const, value: title.titleRu },
-      { locale: "tr" as const, value: title.titleTr },
-    ].find((item) => item.value.trim())
-    if (!source) throw new Error(messages.oneTitleRequired)
+    const sourceText = [title.titleUz, title.titleRu, title.titleTr]
+      .find((value) => value.trim())
+    if (!sourceText) throw new Error(messages.oneTitleRequired)
     const response = await fetch("/api/translate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: source.value, sourceLocale: source.locale }),
+      body: JSON.stringify({ text: sourceText, sourceLocale: "auto" }),
     })
     if (!response.ok) throw new Error(messages.translationFailed)
     const translated = (await response.json()) as Record<Locale, string>
