@@ -279,13 +279,34 @@ export function SettingsWorkspace({
   async function translateRecords(ids: string[]) {
     if (section === "users") return
     setListError("")
+    setListNotice("")
     setTranslating(true)
     try {
       const records = data[section].filter((item) => ids.includes(item.id))
+      const translatedRecords: Array<LocalizedTitle & { id: string }> = []
+      let failedCount = 0
       for (const record of records) {
-        const translated = await requestTranslations(record)
-        updateLocalizedTitles(section, record.id, translated)
+        try {
+          const translated = await requestTranslations(record)
+          translatedRecords.push({ id: record.id, ...translated })
+        } catch {
+          failedCount += 1
+        }
       }
+
+      if (translatedRecords.length) {
+        const response = await fetch("/api/settings/translations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ section, records: translatedRecords }),
+        })
+        if (!response.ok) throw new Error(messages.translationFailed)
+        for (const record of translatedRecords) {
+          updateLocalizedTitles(section, record.id, record)
+        }
+        setListNotice(messages.translationsUpdated.replace("{count}", String(translatedRecords.length)))
+      }
+      if (failedCount) setListError(messages.translationFailed)
     } catch {
       setListError(messages.translationFailed)
     } finally {
@@ -487,6 +508,7 @@ export function SettingsWorkspace({
         canEdit={canEdit}
         canDelete={canDelete}
         canTranslate={canTranslate}
+        translating={translating}
         onEdit={openEditDialog}
         onDelete={(ids) => {
           const deletableIds = section === "roles"

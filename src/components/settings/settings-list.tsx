@@ -23,6 +23,7 @@ import {
   ChevronRightIcon,
   GripVerticalIcon,
   LanguagesIcon,
+  LoaderCircleIcon,
   PencilIcon,
   Trash2Icon,
   XIcon,
@@ -57,6 +58,7 @@ type Props = {
   canEdit: boolean
   canDelete: boolean
   canTranslate: boolean
+  translating: boolean
   onEdit: (id: string) => void
   onDelete: (ids: string[]) => void
   onTranslate: (ids: string[]) => void
@@ -71,6 +73,7 @@ export function SettingsList({
   canEdit,
   canDelete,
   canTranslate,
+  translating,
   onEdit,
   onDelete,
   onTranslate,
@@ -211,9 +214,9 @@ export function SettingsList({
             {validSelectedIds.size} {messages.selectedRows}
           </span>
           {canTranslate && isLocalizedSection ? (
-            <Button variant="ghost" size="sm" onClick={() => onTranslate([...validSelectedIds])}>
-              <LanguagesIcon />
-              {messages.autoFillTranslations}
+            <Button variant="ghost" size="sm" disabled={translating} onClick={() => onTranslate([...validSelectedIds])}>
+              {translating ? <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" /> : <LanguagesIcon />}
+              {translating ? messages.translating : messages.autoFillTranslations}
             </Button>
           ) : null}
           {canDelete && [...validSelectedIds].some((id) => rows.find((row) => row.id === id)?.canDelete !== false) ? (

@@ -21,14 +21,27 @@ async function translate(text: string, source: TranslationSource, target: Locale
   url.searchParams.set("dt", "t")
   url.searchParams.set("q", text)
 
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(8_000),
-    cache: "no-store",
-  })
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(8_000),
+        cache: "no-store",
+      })
 
-  if (!response.ok) throw new Error("Translation service request failed")
-  const payload = (await response.json()) as [Array<[string]>]
-  return payload[0].map((part) => part[0]).join("")
+      if (response.ok) {
+        const payload = (await response.json()) as [Array<[string]>]
+        return payload[0].map((part) => part[0]).join("")
+      }
+    } catch {
+      if (attempt === 3) throw new Error("Translation service request failed")
+    }
+
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 300))
+    }
+  }
+
+  throw new Error("Translation service request failed")
 }
 
 export async function POST(request: Request) {
