@@ -46,8 +46,8 @@ export function TelegramBootstrap({ lang }: { lang: Locale }) {
       webApp.ready()
       webApp.expand()
       if (webApp.isVersionAtLeast?.("6.1")) {
-        webApp.setHeaderColor?.("#ffffff")
-        webApp.setBackgroundColor?.("#f4f7fb")
+        webApp.setHeaderColor?.("#1a2b4a")
+        webApp.setBackgroundColor?.("#f4f6f9")
       }
       try {
         const response = await fetch("/api/telegram/auth", {
@@ -71,14 +71,15 @@ export function TelegramBootstrap({ lang }: { lang: Locale }) {
   }, [lang])
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-muted px-6 py-12">
-      <div className="w-full max-w-sm rounded-3xl border bg-background p-7 text-center shadow-sm">
-        <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+    <main className="flex min-h-dvh items-center justify-center bg-[#1a2b4a] px-6 py-12 text-[#1a1a2e]">
+      <div className="w-full max-w-sm rounded-[18px] border border-white/10 bg-white p-7 text-center shadow-[0_24px_60px_-24px_rgba(4,10,24,0.65)]">
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#7e8db0]">Factory OS</p>
+        <div className="mx-auto mt-5 flex size-14 items-center justify-center rounded-[16px] bg-[#e7f1fb] text-[#2d7dd2]">
           {failed ? <CircleAlertIcon className="size-7" /> : <ShieldCheckIcon className="size-7" />}
         </div>
-        <h1 className="mt-5 text-xl font-semibold tracking-tight">{failed ? labels.failed : labels.title}</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{failed ? labels.help : labels.body}</p>
-        {!failed ? <LoaderCircleIcon className="mx-auto mt-5 size-5 animate-spin text-primary" aria-label={labels.body} /> : null}
+        <h1 className="mt-5 text-xl font-bold tracking-tight">{failed ? labels.failed : labels.title}</h1>
+        <p className="mt-2 text-[13px] leading-5 text-[#6b7280]">{failed ? labels.help : labels.body}</p>
+        {!failed ? <LoaderCircleIcon className="mx-auto mt-5 size-5 animate-spin text-[#2d7dd2] motion-reduce:animate-none" aria-label={labels.body} /> : null}
       </div>
     </main>
   )

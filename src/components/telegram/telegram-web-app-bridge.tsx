@@ -12,8 +12,8 @@ export function TelegramWebAppBridge() {
     app.ready()
     app.expand()
     if (app.isVersionAtLeast?.("6.1")) {
-      app.setHeaderColor?.("#ffffff")
-      app.setBackgroundColor?.("#f4f7fb")
+      app.setHeaderColor?.("#1a2b4a")
+      app.setBackgroundColor?.("#f4f6f9")
     }
   }, [pathname])
 
