@@ -65,6 +65,31 @@ type SortKey = keyof Pick<
   | "stage"
 >
 
+type ColumnKey = SortKey | "actions"
+
+const COLUMN_WIDTH_STORAGE_KEY = "factory-os.procurement-column-widths.v1"
+const MIN_COLUMN_WIDTH = 72
+const MAX_COLUMN_WIDTH = 480
+const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
+  updatedAt: 112,
+  orderNumber: 144,
+  applicant: 168,
+  department: 168,
+  warehouse: 168,
+  productName: 240,
+  productCode: 136,
+  unit: 144,
+  requested: 112,
+  available: 112,
+  purchaseQuantity: 132,
+  assignee: 168,
+  offerCount: 104,
+  stage: 184,
+  actions: 112,
+}
+
+const COLUMN_KEYS = Object.keys(DEFAULT_COLUMN_WIDTHS) as ColumnKey[]
+
 export function ProcurementWorkspace({ lang, messages }: { lang: Locale; messages: Messages }) {
   const { can } = useAuthorization()
   const { orders } = useOrders()
@@ -76,7 +101,30 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
     key: "updatedAt",
     direction: "desc",
   })
+  const [columnWidths, setColumnWidths] = React.useState(DEFAULT_COLUMN_WIDTHS)
   const copy = procurementOverviewCopy(lang)
+
+  React.useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        const savedWidths = window.localStorage.getItem(COLUMN_WIDTH_STORAGE_KEY)
+        if (!savedWidths) return
+        const parsedWidths = JSON.parse(savedWidths) as Partial<Record<ColumnKey, unknown>>
+        setColumnWidths((current) => Object.fromEntries(
+          COLUMN_KEYS.map((key) => [
+            key,
+            typeof parsedWidths[key] === "number"
+              ? clampColumnWidth(parsedWidths[key])
+              : current[key],
+          ]),
+        ) as Record<ColumnKey, number>)
+      } catch {
+        // Ignore malformed or unavailable browser storage and keep the defaults.
+      }
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [])
 
   if (!can("procurement.view")) {
     return <AccessDenied lang={lang} permissions={["procurement.view"]} />
@@ -185,6 +233,24 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
       : { key, direction: key === "updatedAt" ? "desc" : "asc" })
   }
 
+  function changeColumnWidth(key: ColumnKey, width: number) {
+    setColumnWidths((current) => {
+      const next = { ...current, [key]: clampColumnWidth(width) }
+      try {
+        window.localStorage.setItem(COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(next))
+      } catch {
+        // Resizing still works for this session when browser storage is unavailable.
+      }
+      return next
+    })
+  }
+
+  function resetColumnWidth(key: ColumnKey) {
+    changeColumnWidth(key, DEFAULT_COLUMN_WIDTHS[key])
+  }
+
+  const tableWidth = COLUMN_KEYS.reduce((total, key) => total + columnWidths[key], 0)
+
   return (
     <div className="flex min-w-0 w-full flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
       <div>
@@ -260,7 +326,15 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
         </div>
 
         <div className="max-h-[calc(100dvh-23rem)] min-h-64 overflow-auto">
-          <table className="w-full min-w-[1540px] border-separate border-spacing-0 text-xs">
+          <table
+            className="table-fixed border-separate border-spacing-0 text-xs"
+            style={{ width: tableWidth, minWidth: tableWidth }}
+          >
+            <colgroup>
+              {COLUMN_KEYS.map((key) => (
+                <col key={key} style={{ width: columnWidths[key] }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <GroupHead colSpan={3}>{copy.groups.request}</GroupHead>
@@ -270,22 +344,28 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
                 <GroupHead className="sticky right-0 z-40 border-r-0" aria-label={copy.columns.actions} />
               </tr>
               <tr>
-                <SortableHead label={copy.columns.updatedAt} sortKey="updatedAt" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.orderNumber} sortKey="orderNumber" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.applicant} sortKey="applicant" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.department} sortKey="department" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.warehouse} sortKey="warehouse" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.product} sortKey="productName" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.productCode} sortKey="productCode" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.unit} sortKey="unit" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.requested} sortKey="requested" sort={sort} onSort={changeSort} numeric />
-                <SortableHead label={copy.columns.available} sortKey="available" sort={sort} onSort={changeSort} numeric />
-                <SortableHead label={copy.columns.toPurchase} sortKey="purchaseQuantity" sort={sort} onSort={changeSort} numeric />
-                <SortableHead label={copy.columns.assignee} sortKey="assignee" sort={sort} onSort={changeSort} />
-                <SortableHead label={copy.columns.offers} sortKey="offerCount" sort={sort} onSort={changeSort} numeric />
-                <SortableHead label={copy.columns.stage} sortKey="stage" sort={sort} onSort={changeSort} />
-                <th className="sticky top-8 right-0 z-30 w-28 border-b border-l bg-muted/95 px-3 py-2 text-left font-medium backdrop-blur-sm">
+                <SortableHead label={copy.columns.updatedAt} sortKey="updatedAt" sort={sort} onSort={changeSort} width={columnWidths.updatedAt} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.orderNumber} sortKey="orderNumber" sort={sort} onSort={changeSort} width={columnWidths.orderNumber} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.applicant} sortKey="applicant" sort={sort} onSort={changeSort} width={columnWidths.applicant} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.department} sortKey="department" sort={sort} onSort={changeSort} width={columnWidths.department} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.warehouse} sortKey="warehouse" sort={sort} onSort={changeSort} width={columnWidths.warehouse} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.product} sortKey="productName" sort={sort} onSort={changeSort} width={columnWidths.productName} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.productCode} sortKey="productCode" sort={sort} onSort={changeSort} width={columnWidths.productCode} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.unit} sortKey="unit" sort={sort} onSort={changeSort} width={columnWidths.unit} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.requested} sortKey="requested" sort={sort} onSort={changeSort} width={columnWidths.requested} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} numeric />
+                <SortableHead label={copy.columns.available} sortKey="available" sort={sort} onSort={changeSort} width={columnWidths.available} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} numeric />
+                <SortableHead label={copy.columns.toPurchase} sortKey="purchaseQuantity" sort={sort} onSort={changeSort} width={columnWidths.purchaseQuantity} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} numeric />
+                <SortableHead label={copy.columns.assignee} sortKey="assignee" sort={sort} onSort={changeSort} width={columnWidths.assignee} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <SortableHead label={copy.columns.offers} sortKey="offerCount" sort={sort} onSort={changeSort} width={columnWidths.offerCount} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} numeric />
+                <SortableHead label={copy.columns.stage} sortKey="stage" sort={sort} onSort={changeSort} width={columnWidths.stage} onResize={changeColumnWidth} onResetWidth={resetColumnWidth} resizeLabel={copy.resizeColumn} />
+                <th className="sticky top-8 right-0 z-30 border-b border-l bg-muted/95 px-3 py-2 text-left font-medium backdrop-blur-sm">
                   {copy.columns.actions}
+                  <ColumnResizeHandle
+                    label={`${copy.resizeColumn}: ${copy.columns.actions}`}
+                    width={columnWidths.actions}
+                    onResize={(width) => changeColumnWidth("actions", width)}
+                    onReset={() => resetColumnWidth("actions")}
+                  />
                 </th>
               </tr>
             </thead>
@@ -329,7 +409,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
 
         <div className="flex flex-col gap-1 border-t bg-muted/20 px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span>{copy.showing.replace("{shown}", String(filteredRows.length)).replace("{total}", String(rows.length))}</span>
-          <span>{copy.sortHint}</span>
+          <span>{copy.tableHint}</span>
         </div>
       </section>
     </div>
@@ -353,12 +433,20 @@ function SortableHead({
   sortKey,
   sort,
   onSort,
+  width,
+  onResize,
+  onResetWidth,
+  resizeLabel,
   numeric,
 }: {
   label: string
   sortKey: SortKey
   sort: { key: SortKey; direction: "asc" | "desc" }
   onSort: (key: SortKey) => void
+  width: number
+  onResize: (key: ColumnKey, width: number) => void
+  onResetWidth: (key: ColumnKey) => void
+  resizeLabel: string
   numeric?: boolean
 }) {
   const active = sort.key === sortKey
@@ -379,7 +467,73 @@ function SortableHead({
         <span className="truncate">{label}</span>
         <ArrowUpDownIcon className={cn("size-3 shrink-0", active && "text-primary")} aria-hidden="true" />
       </button>
+      <ColumnResizeHandle
+        label={`${resizeLabel}: ${label}`}
+        width={width}
+        onResize={(nextWidth) => onResize(sortKey, nextWidth)}
+        onReset={() => onResetWidth(sortKey)}
+      />
     </th>
+  )
+}
+
+function ColumnResizeHandle({
+  label,
+  width,
+  onResize,
+  onReset,
+}: {
+  label: string
+  width: number
+  onResize: (width: number) => void
+  onReset: () => void
+}) {
+  function startResize(event: React.PointerEvent<HTMLButtonElement>) {
+    event.currentTarget.focus({ preventScroll: true })
+    event.preventDefault()
+    event.stopPropagation()
+    const startX = event.clientX
+    const startWidth = width
+    const previousCursor = document.body.style.cursor
+    const previousUserSelect = document.body.style.userSelect
+    document.body.style.cursor = "col-resize"
+    document.body.style.userSelect = "none"
+
+    function handlePointerMove(pointerEvent: PointerEvent) {
+      onResize(startWidth + pointerEvent.clientX - startX)
+    }
+
+    function finishResize() {
+      document.body.style.cursor = previousCursor
+      document.body.style.userSelect = previousUserSelect
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", finishResize)
+      window.removeEventListener("pointercancel", finishResize)
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", finishResize)
+    window.addEventListener("pointercancel", finishResize)
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="absolute inset-y-0 -right-1 z-10 w-2 cursor-col-resize touch-none border-0 bg-transparent p-0 outline-none after:absolute after:inset-y-1 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-border hover:after:w-0.5 hover:after:bg-primary focus-visible:after:w-0.5 focus-visible:after:bg-primary"
+      onPointerDown={startResize}
+      onDoubleClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onReset()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return
+        event.preventDefault()
+        onResize(width + (event.key === "ArrowRight" ? 8 : -8))
+      }}
+    />
   )
 }
 
@@ -436,13 +590,17 @@ function formatNumber(value: number, lang: Locale) {
   return new Intl.NumberFormat(localeFor(lang), { maximumFractionDigits: 2 }).format(value)
 }
 
+function clampColumnWidth(width: number) {
+  return Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(width)))
+}
+
 function procurementOverviewCopy(lang: Locale) {
   if (lang === "ru") return {
     description: "Реестр заявок снабжения в формате рабочей Excel-таблицы.",
     openOrder: "Открыть", notAssigned: "Не назначен", metricsLabel: "Статистика снабжения",
     searchPlaceholder: "Поиск по таблице…", stageFilter: "Фильтр по этапу", allStages: "Все этапы", reset: "Очистить",
     tableTitle: "Реестр снабжения", tableDescription: "Одна строка — одна позиция заказа", noMatchingRows: "Нет строк под выбранные фильтры.",
-    showing: "Показаны {shown} из {total}", sortHint: "Нажмите на заголовок, чтобы отсортировать столбец.",
+    showing: "Показаны {shown} из {total}", tableHint: "Нажмите на заголовок для сортировки; потяните границу, чтобы изменить ширину.", resizeColumn: "Изменить ширину столбца",
     groups: { request: "Заявка", destination: "Адресат", product: "Товар", procurement: "Снабжение" },
     columns: { updatedAt: "Дата", orderNumber: "Номер заказа", applicant: "Заявитель", department: "Отдел", warehouse: "Склад", product: "Наименование товара", productCode: "Код товара", unit: "Ед. изм.", requested: "Запрошено", available: "На складе", toPurchase: "К закупке", assignee: "Снабженец", offers: "Предложений", stage: "Статус", actions: "Действия" },
     metrics: { requests: "Заявки", requestsNote: "В реестре снабжения", awaitingAssignment: "Без исполнителя", awaitingAssignmentNote: "Ожидают назначения", positions: "Позиции", positionsNote: "Товары к закупке", review: "На проверке", reviewNote: "У руководителя", offers: "Предложения", offersNote: "Коммерческие предложения" },
@@ -453,7 +611,7 @@ function procurementOverviewCopy(lang: Locale) {
     openOrder: "Aç", notAssigned: "Atanmadı", metricsLabel: "Satın alma istatistikleri",
     searchPlaceholder: "Tabloda ara…", stageFilter: "Aşamaya göre filtrele", allStages: "Tüm aşamalar", reset: "Temizle",
     tableTitle: "Satın alma kaydı", tableDescription: "Her satır bir sipariş kalemidir", noMatchingRows: "Seçilen filtrelere uygun satır yok.",
-    showing: "{total} satırdan {shown} tanesi gösteriliyor", sortHint: "Sütunu sıralamak için başlığa tıklayın.",
+    showing: "{total} satırdan {shown} tanesi gösteriliyor", tableHint: "Sıralamak için başlığa tıklayın; genişliği değiştirmek için kenarı sürükleyin.", resizeColumn: "Sütun genişliğini değiştir",
     groups: { request: "Sipariş", destination: "Hedef", product: "Ürün", procurement: "Satın alma" },
     columns: { updatedAt: "Tarih", orderNumber: "Sipariş no.", applicant: "Talep eden", department: "Departman", warehouse: "Depo", product: "Ürün adı", productCode: "Ürün kodu", unit: "Birim", requested: "Talep", available: "Stokta", toPurchase: "Satın alınacak", assignee: "Uzman", offers: "Teklif", stage: "Durum", actions: "İşlemler" },
     metrics: { requests: "Siparişler", requestsNote: "Satın alma kaydında", awaitingAssignment: "Atanmamış", awaitingAssignmentNote: "Atama bekliyor", positions: "Kalemler", positionsNote: "Satın alınacak ürünler", review: "İncelemede", reviewNote: "Yönetici bekleniyor", offers: "Teklifler", offersNote: "Ticari teklifler" },
@@ -464,7 +622,7 @@ function procurementOverviewCopy(lang: Locale) {
     openOrder: "Ochish", notAssigned: "Biriktirilmagan", metricsLabel: "Ta’minot statistikasi",
     searchPlaceholder: "Jadvaldan qidirish…", stageFilter: "Bosqich bo‘yicha filtrlash", allStages: "Barcha bosqichlar", reset: "Tozalash",
     tableTitle: "Ta’minot reyestri", tableDescription: "Har bir qator — buyurtmaning bitta pozitsiyasi", noMatchingRows: "Tanlangan filtrlarga mos qatorlar yo‘q.",
-    showing: "{total} tadan {shown} tasi ko‘rsatilmoqda", sortHint: "Ustunni saralash uchun sarlavhani bosing.",
+    showing: "{total} tadan {shown} tasi ko‘rsatilmoqda", tableHint: "Saralash uchun sarlavhani bosing; kenglikni o‘zgartirish uchun chetini torting.", resizeColumn: "Ustun kengligini o‘zgartirish",
     groups: { request: "Buyurtma", destination: "Manzil", product: "Mahsulot", procurement: "Ta’minot" },
     columns: { updatedAt: "Sana", orderNumber: "Buyurtma raqami", applicant: "Arizachi", department: "Bo‘lim", warehouse: "Ombor", product: "Mahsulot nomi", productCode: "Mahsulot kodi", unit: "O‘lchov birligi", requested: "So‘ralgan", available: "Omborda", toPurchase: "Xarid qilinadi", assignee: "Ta’minotchi", offers: "Takliflar", stage: "Holati", actions: "Amallar" },
     metrics: { requests: "Buyurtmalar", requestsNote: "Ta’minot reyestrida", awaitingAssignment: "Ijrochisiz", awaitingAssignmentNote: "Biriktirish kutilmoqda", positions: "Pozitsiyalar", positionsNote: "Xarid qilinadigan mahsulotlar", review: "Tekshiruvda", reviewNote: "Rahbar harakatini kutmoqda", offers: "Takliflar", offersNote: "Tijorat takliflari" },
