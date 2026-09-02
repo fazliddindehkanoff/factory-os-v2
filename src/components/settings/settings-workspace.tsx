@@ -85,6 +85,7 @@ export function SettingsWorkspace({
   const [listNotice, setListNotice] = React.useState("")
   const [excelOperation, setExcelOperation] = React.useState<"upload" | "download" | null>(null)
   const [translating, setTranslating] = React.useState(false)
+  const [savingRecord, setSavingRecord] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [form, setForm] = React.useState<FormState>(createInitialForm(section))
   const sectionTitle = getSectionTitle(section, messages)
@@ -139,7 +140,7 @@ export function SettingsWorkspace({
     else addRecord(targetSection, record)
   }
 
-  function submitRecord(event: React.FormEvent<HTMLFormElement>) {
+  async function submitRecord(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (
       section !== "users" &&
@@ -154,6 +155,48 @@ export function SettingsWorkspace({
         .some((value) => String(value ?? "").length > PRODUCT_TITLE_MAX_LENGTH)
     ) {
       setFormError(messages.productTitleTooLong)
+      return
+    }
+    if (section === "users" && editingId) {
+      setSavingRecord(true)
+      setFormError("")
+      try {
+        const response = await fetch(`/api/settings/users/${encodeURIComponent(editingId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fullName: String(form.fullName),
+            positionId: String(form.positionId),
+            username: String(form.username),
+            password: String(form.password),
+            telegramChatId: String(form.telegramChatId),
+            phoneNumber: String(form.phoneNumber),
+            departmentIds: form.departmentIds as string[],
+            roleIds: form.roleIds as string[],
+          }),
+        })
+        const result = await response.json() as {
+          user?: (typeof data.users)[number]
+          error?: string
+        }
+        if (!response.ok || !result.user) {
+          setFormError(
+            result.error === "username-exists"
+              ? messages.usernameAlreadyExists
+              : result.error === "invalid-password"
+                ? messages.passwordTooShort
+                : messages.userUpdateFailed,
+          )
+          return
+        }
+        updateRecord("users", result.user)
+        setDialogOpen(false)
+        setEditingId(null)
+      } catch {
+        setFormError(messages.userUpdateFailed)
+      } finally {
+        setSavingRecord(false)
+      }
       return
     }
     const id = editingId ?? `${section}-${crypto.randomUUID()}`
@@ -458,6 +501,7 @@ export function SettingsWorkspace({
                   branchOptions={branchOptions}
                   warehouseOptions={warehouseOptions}
                   departmentOptions={departmentOptions}
+                  isEditing={Boolean(editingId)}
                 />
               </div>
               {formError ? <p role="alert" className="pb-3 text-sm text-destructive">{formError}</p> : null}
@@ -465,7 +509,10 @@ export function SettingsWorkspace({
                 <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                   {messages.cancel}
                 </Button>
-                <Button type="submit">{messages.save}</Button>
+                <Button type="submit" disabled={savingRecord}>
+                  {savingRecord ? <LoaderCircleIcon className="animate-spin" /> : null}
+                  {messages.save}
+                </Button>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -559,6 +606,7 @@ function SettingsForm({
   branchOptions,
   warehouseOptions,
   departmentOptions,
+  isEditing,
 }: {
   section: SettingsSection
   form: FormState
@@ -569,6 +617,7 @@ function SettingsForm({
   branchOptions: { value: string; label: string }[]
   warehouseOptions: { value: string; label: string }[]
   departmentOptions: { value: string; label: string }[]
+  isEditing: boolean
 }) {
   const localizedFields = section !== "users" ? (
     <>
@@ -630,7 +679,15 @@ function SettingsForm({
           <TextField label={messages.fullName} name="fullName" value={form.fullName} onChange={updateField} />
           <SelectField label={messages.position} name="positionId" value={form.positionId} onChange={updateField} placeholder={messages.selectOption} options={data.positions.map((item) => ({ value: item.id, label: getLocalizedTitle(item, lang) }))} />
           <TextField label={messages.username} name="username" value={form.username} onChange={updateField} />
-          <TextField label={messages.password} name="password" value={form.password} onChange={updateField} type="password" />
+          <TextField
+            label={messages.password}
+            name="password"
+            value={form.password}
+            onChange={updateField}
+            type="password"
+            required={!isEditing}
+            placeholder={isEditing ? messages.passwordKeepCurrent : undefined}
+          />
           <TextField label={messages.telegramChatId} name="telegramChatId" value={form.telegramChatId} onChange={updateField} required={false} />
           <TextField label={messages.phoneNumber} name="phoneNumber" value={form.phoneNumber} onChange={updateField} type="tel" />
           <MultiSelectField label={messages.departmentsField} name="departmentIds" form={form} updateField={updateField} options={departmentOptions} messages={messages} />
@@ -641,7 +698,7 @@ function SettingsForm({
   )
 }
 
-function TextField({ label, name, value, onChange, type = "text", required = true, maxLength, descriptionId }: {
+function TextField({ label, name, value, onChange, type = "text", required = true, maxLength, descriptionId, placeholder }: {
   label: string
   name: string
   value: FormValue
@@ -650,11 +707,12 @@ function TextField({ label, name, value, onChange, type = "text", required = tru
   required?: boolean
   maxLength?: number
   descriptionId?: string
+  placeholder?: string
 }) {
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={name}>{label}</Label>
-      <Input id={name} name={name} type={type} required={required} maxLength={maxLength} aria-describedby={descriptionId} value={String(value ?? "")} onChange={(event) => onChange(name, event.target.value)} />
+      <Input id={name} name={name} type={type} required={required} maxLength={maxLength} aria-describedby={descriptionId} placeholder={placeholder} value={String(value ?? "")} onChange={(event) => onChange(name, event.target.value)} />
     </div>
   )
 }
@@ -783,7 +841,7 @@ function createFormFromRecord(
     }
     case "users": {
       const record = data.users.find((item) => item.id === id)
-      return record ? { ...record, departmentIds: [...record.departmentIds], roleIds: [...record.roleIds] } : createInitialForm(section)
+      return record ? { ...record, password: "", departmentIds: [...record.departmentIds], roleIds: [...record.roleIds] } : createInitialForm(section)
     }
   }
 }
