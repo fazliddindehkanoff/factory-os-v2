@@ -63,6 +63,30 @@ type Props = {
   onReorder: (activeId: string, overId: string) => void
 }
 
+type PaginationItem = number | "ellipsis"
+
+function getPaginationItems(currentPage: number, pageCount: number): PaginationItem[] {
+  if (pageCount <= 7) return Array.from({ length: pageCount }, (_, index) => index + 1)
+
+  const visiblePages = new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1])
+  if (currentPage <= 4) [2, 3, 4, 5].forEach((page) => visiblePages.add(page))
+  if (currentPage >= pageCount - 3) {
+    [pageCount - 4, pageCount - 3, pageCount - 2, pageCount - 1].forEach((page) => visiblePages.add(page))
+  }
+
+  const pages = [...visiblePages]
+    .filter((page) => page >= 1 && page <= pageCount)
+    .sort((left, right) => left - right)
+  const items: PaginationItem[] = []
+
+  pages.forEach((page, index) => {
+    if (index > 0 && page - pages[index - 1] > 1) items.push("ellipsis")
+    items.push(page)
+  })
+
+  return items
+}
+
 export function SettingsList({
   section,
   rows,
@@ -85,6 +109,7 @@ export function SettingsList({
   )
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize))
   const safePage = Math.min(page, pageCount)
+  const paginationItems = getPaginationItems(safePage, pageCount)
   const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize)
   const pageIds = pageRows.map((row) => row.id)
   const pageIdKey = pageIds.join("\u0000")
@@ -232,15 +257,30 @@ export function SettingsList({
             {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
           </select>
         </label>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{safePage} {messages.pageOf} {pageCount}</span>
+        <nav aria-label={`${safePage} ${messages.pageOf} ${pageCount}`} className="flex flex-wrap items-center justify-end gap-1">
           <Button variant="outline" size="icon" aria-label={messages.previousPage} disabled={safePage === 1} onClick={() => setPage(Math.max(1, safePage - 1))}>
             <ChevronLeftIcon />
           </Button>
+          {paginationItems.map((item, index) => item === "ellipsis" ? (
+            <span key={`ellipsis-${index}`} aria-hidden="true" className="flex size-9 items-center justify-center text-sm text-muted-foreground">
+              …
+            </span>
+          ) : (
+            <Button
+              key={item}
+              variant={item === safePage ? "default" : "outline"}
+              size="icon"
+              aria-current={item === safePage ? "page" : undefined}
+              aria-label={`${item} ${messages.pageOf} ${pageCount}`}
+              onClick={() => setPage(item)}
+            >
+              {item}
+            </Button>
+          ))}
           <Button variant="outline" size="icon" aria-label={messages.nextPage} disabled={safePage === pageCount} onClick={() => setPage(Math.min(pageCount, safePage + 1))}>
             <ChevronRightIcon />
           </Button>
-        </div>
+        </nav>
       </div>
     </div>
   )
