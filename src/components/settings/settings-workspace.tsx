@@ -256,9 +256,9 @@ export function SettingsWorkspace({
     if (!response.ok) throw new Error(messages.translationFailed)
     const translated = (await response.json()) as Record<Locale, string>
     return {
-      titleUz: title.titleUz || translated.uz,
-      titleRu: title.titleRu || translated.ru,
-      titleTr: title.titleTr || translated.tr,
+      titleUz: translated.uz,
+      titleRu: translated.ru,
+      titleTr: translated.tr,
     }
   }
 

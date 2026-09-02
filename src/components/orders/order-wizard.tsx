@@ -875,9 +875,9 @@ function CreateProductDialog({
       const translated = await response.json() as Record<Locale, string>
       setForm((current) => ({
         ...current,
-        titleUz: current.titleUz || translated.uz,
-        titleRu: current.titleRu || translated.ru,
-        titleTr: current.titleTr || translated.tr,
+        titleUz: translated.uz,
+        titleRu: translated.ru,
+        titleTr: translated.tr,
       }))
     } catch {
       setError(messages.translationFailed)
