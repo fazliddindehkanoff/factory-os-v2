@@ -252,10 +252,16 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
   function notify(userId: string | undefined, order: OrderRecord, event: WorkflowNotificationEvent) {
     if (!userId) return
-    setNotifications((current) => [{
+    const notification = {
       id: crypto.randomUUID(), userId, orderId: order.id, orderNumber: order.number,
       event, createdAt: new Date().toISOString(), read: false,
-    }, ...current])
+    }
+    setNotifications((current) => [notification, ...current])
+    void fetch("/api/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(notification),
+    })
   }
 
   function appendWorkflowHistory(

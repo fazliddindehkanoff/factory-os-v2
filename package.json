@@ -13,7 +13,8 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:setup": "npm run db:migrate && npm run db:seed",
     "db:check": "tsx scripts/check-db.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "telegram:setup": "tsx scripts/setup-telegram.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

@@ -12,7 +12,8 @@ export function proxy(request: NextRequest) {
 
   if (firstSegment && isLocale(firstSegment)) {
     const isLoginPage = pathname === `/${firstSegment}/login`
-    if (!isLoginPage && !hasSession) {
+    const isTelegramBootstrap = pathname === `/${firstSegment}/telegram`
+    if (!isLoginPage && !isTelegramBootstrap && !hasSession) {
       const loginUrl = request.nextUrl.clone()
       loginUrl.pathname = `/${firstSegment}/login`
       loginUrl.search = ""

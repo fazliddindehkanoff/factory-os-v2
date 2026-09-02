@@ -48,6 +48,26 @@ The seed command is idempotent and can be run repeatedly. Cloudflare D1 and Post
 
 The development seed assigns the password configured by `SEED_DEFAULT_PASSWORD` to users that do not have a password yet. The fallback development password is `FactoryOS123!`; set a private value before seeding any shared or production environment. For example, sign in with `admin` and the configured seed password.
 
+## Telegram Mini App
+
+The Telegram bot and Mini App use the existing Factory OS users. A user sends `/start`, shares their own contact, and is matched against the normalized `users.phone_number` value. The bot then stores the private Telegram user/chat ID in `users.telegram_chat_id` and unlocks the Mini App.
+
+Configure these environment variables:
+
+```env
+TELEGRAM_BOT_TOKEN=123456:bot-token
+TELEGRAM_WEBHOOK_SECRET=long_random_value_using_letters_numbers_underscores_or_dashes
+TELEGRAM_WEB_APP_URL=https://factory.example.com/uz/telegram
+```
+
+After the deployed app is reachable over HTTPS, register its webhook and commands:
+
+```bash
+npm run telegram:setup
+```
+
+The Mini App validates Telegram `initData` on the server, creates the normal Factory OS session, and exposes only its mobile order, waiting-for-action, and notification navigation. Workflow notifications are saved in the database and sent to linked Telegram users when a workflow event occurs.
+
 ## Validation
 
 ```bash
