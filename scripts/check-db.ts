@@ -1,4 +1,4 @@
-import { asc, count, isNotNull } from "drizzle-orm"
+import { asc, count, eq, isNotNull } from "drizzle-orm"
 
 import { databaseClient, db } from "../src/db/client"
 import {
@@ -16,18 +16,26 @@ async function checkDatabase() {
   const publishedVersions = await db.select({ id: workflowTemplateVersions.id })
     .from(workflowTemplateVersions)
     .where(isNotNull(workflowTemplateVersions.publishedAt))
-  const steps = await db.select({ order: workflowStepDefinitions.stepOrder })
-    .from(workflowStepDefinitions)
-    .orderBy(asc(workflowStepDefinitions.stepOrder))
+  const foreignKeyErrors = await databaseClient.execute("PRAGMA foreign_key_check")
 
-  if (orderCount !== 3) throw new Error(`Expected 3 seeded orders, found ${orderCount}`)
-  if (departmentCount !== 2) throw new Error(`Expected 2 departments with supervisors, found ${departmentCount}`)
-  if (publishedVersions.length !== 1) throw new Error(`Expected 1 published workflow, found ${publishedVersions.length}`)
-  if (steps.length !== 9 || steps.some((step, index) => step.order !== index + 1)) {
-    throw new Error("The default workflow must contain nine ordered steps")
+  if (foreignKeyErrors.rows.length) {
+    throw new Error(`Database has ${foreignKeyErrors.rows.length} foreign-key integrity error(s)`)
   }
 
-  console.log("Database check passed: 3 orders, 2 supervised departments, 1 published workflow, 9 ordered steps")
+  for (const version of publishedVersions) {
+    const steps = await db.select({ order: workflowStepDefinitions.stepOrder })
+      .from(workflowStepDefinitions)
+      .where(eq(workflowStepDefinitions.versionId, version.id))
+      .orderBy(asc(workflowStepDefinitions.stepOrder))
+
+    if (!steps.length || steps.some((step, index) => step.order !== index + 1)) {
+      throw new Error(`Published workflow ${version.id} must contain contiguous ordered steps`)
+    }
+  }
+
+  console.log(
+    `Database check passed: ${orderCount} orders, ${departmentCount} supervised departments, ${publishedVersions.length} published workflow(s), no foreign-key errors`,
+  )
 }
 
 checkDatabase()
