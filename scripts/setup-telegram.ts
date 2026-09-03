@@ -25,17 +25,24 @@ async function telegram(method: string, payload: Record<string, unknown>) {
   return result.result
 }
 
-const bot = await telegram("getMe", {}) as { username?: string }
-await telegram("setWebhook", {
-  url: webhookUrl,
-  secret_token: secret,
-  allowed_updates: ["message"],
-})
-await telegram("setMyCommands", {
-  commands: [
-    { command: "start", description: "Factory OS’ni ochish" },
-    { command: "help", description: "Yordam" },
-  ],
-})
+async function main() {
+  const bot = await telegram("getMe", {}) as { username?: string }
+  await telegram("setWebhook", {
+    url: webhookUrl,
+    secret_token: secret,
+    allowed_updates: ["message"],
+  })
+  await telegram("setMyCommands", {
+    commands: [
+      { command: "start", description: "Factory OS’ni ochish" },
+      { command: "help", description: "Yordam" },
+    ],
+  })
 
-console.log(`Telegram bot @${bot.username ?? "unknown"} is connected to ${webhookUrl}`)
+  console.log(`Telegram bot @${bot.username ?? "unknown"} is connected to ${webhookUrl}`)
+}
+
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : "Telegram setup failed")
+  process.exitCode = 1
+})
