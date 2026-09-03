@@ -23,10 +23,18 @@ import type { Locale } from "@/lib/i18n"
 import type { PermissionCode } from "@/lib/rbac"
 
 const localeField = {
-  uz: { department: departments.titleUz, warehouse: warehouses.titleUz, purpose: orderPurposes.titleUz, product: products.titleUz, unit: unitTypes.titleUz },
-  ru: { department: departments.titleRu, warehouse: warehouses.titleRu, purpose: orderPurposes.titleRu, product: products.titleRu, unit: unitTypes.titleRu },
-  tr: { department: departments.titleTr, warehouse: warehouses.titleTr, purpose: orderPurposes.titleTr, product: products.titleTr, unit: unitTypes.titleTr },
+  uz: { department: departments.titleUz, warehouse: warehouses.titleUz, purpose: orderPurposes.titleUz, product: products.titleUz, unit: unitTypes.titleUz, role: roles.titleUz },
+  ru: { department: departments.titleRu, warehouse: warehouses.titleRu, purpose: orderPurposes.titleRu, product: products.titleRu, unit: unitTypes.titleRu, role: roles.titleRu },
+  tr: { department: departments.titleTr, warehouse: warehouses.titleTr, purpose: orderPurposes.titleTr, product: products.titleTr, unit: unitTypes.titleTr, role: roles.titleTr },
 } as const
+
+export type TelegramUserProfile = {
+  fullName: string
+  username: string
+  phoneNumber: string
+  telegramConnected: boolean
+  roles: string[]
+}
 
 export type TelegramOrderSummary = {
   id: string
@@ -47,6 +55,34 @@ export type TelegramOrderSummary = {
 export type TelegramOrderDetail = TelegramOrderSummary & {
   comment: string
   lines: Array<{ id: string; product: string; unit: string; quantity: number; note: string }>
+}
+
+export async function getTelegramUserProfile(userId: string, lang: Locale) {
+  const localized = localeField[lang]
+  const [userRows, roleRows] = await Promise.all([
+    db.select({
+      fullName: users.fullName,
+      username: users.username,
+      phoneNumber: users.phoneNumber,
+      telegramChatId: users.telegramChatId,
+    })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+    db.select({ title: localized.role })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, userId)),
+  ])
+  const user = userRows[0]
+  if (!user) return null
+  return {
+    fullName: user.fullName,
+    username: user.username,
+    phoneNumber: user.phoneNumber ?? "",
+    telegramConnected: Boolean(user.telegramChatId),
+    roles: roleRows.map((role) => role.title),
+  } satisfies TelegramUserProfile
 }
 
 async function getOrderAccess(userId: string) {

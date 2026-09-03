@@ -1,12 +1,13 @@
-import { AlertTriangleIcon, ClipboardListIcon, Clock3Icon, FileTextIcon } from "lucide-react"
+import { ClipboardListIcon } from "lucide-react"
 import { notFound } from "next/navigation"
 
 import { TelegramOrderCard } from "@/components/telegram/telegram-order-card"
+import { TelegramOrdersHero } from "@/components/telegram/telegram-orders-hero"
 import { TelegramShell } from "@/components/telegram/telegram-shell"
 import { requireSession } from "@/lib/auth/session"
 import { isLocale } from "@/lib/i18n"
 import { telegramCopy } from "@/lib/telegram-copy"
-import { getTelegramOrders } from "@/lib/telegram-orders"
+import { getTelegramOrders, getTelegramUserProfile } from "@/lib/telegram-orders"
 
 export default async function Page({ params, searchParams }: PageProps<"/[lang]/telegram/orders">) {
   const { lang } = await params
@@ -14,8 +15,9 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
   const session = await requireSession(lang)
   const query = await searchParams
   const waitingOnly = query.scope === "waiting"
-  const [allOrders, copy] = await Promise.all([
+  const [allOrders, profile, copy] = await Promise.all([
     getTelegramOrders(session.userId, lang),
+    getTelegramUserProfile(session.userId, lang),
     Promise.resolve(telegramCopy[lang]),
   ])
   const orders = waitingOnly ? allOrders.filter((order) => order.waitingForMe) : allOrders
@@ -42,14 +44,18 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
       userName={session.fullName}
       title={waitingOnly ? copy.waitingOrders : copy.allOrders}
       subtitle={waitingOnly ? copy.waitingSubtitle : copy.ordersSubtitle}
+      hero={(
+        <TelegramOrdersHero
+          copy={copy}
+          userName={profile?.fullName ?? session.fullName}
+          roleNames={profile?.roles ?? []}
+          totalCount={allOrders.length}
+          waitingCount={waitingCount}
+          urgentCount={urgentCount}
+        />
+      )}
     >
-      <section aria-label={copy.totalOrders} className="grid grid-cols-3 gap-2.5">
-        <SummaryCard icon={FileTextIcon} label={copy.totalOrders} value={allOrders.length} tone="blue" />
-        <SummaryCard icon={Clock3Icon} label={copy.actionRequired} value={waitingCount} tone="amber" />
-        <SummaryCard icon={AlertTriangleIcon} label={copy.urgentOrders} value={urgentCount} tone="red" />
-      </section>
-
-      <div className="mb-3 mt-6 flex items-center justify-between gap-3 px-0.5">
+      <div className="mb-3 flex items-center justify-between gap-3 px-0.5">
         <h2 className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#697386]">{copy.ordersSection}</h2>
         <span className="font-mono text-[11px] font-semibold text-[#9aa3b2]">{orders.length}</span>
       </div>
@@ -76,33 +82,5 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
         </div>
       )}
     </TelegramShell>
-  )
-}
-
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: typeof FileTextIcon
-  label: string
-  value: number
-  tone: "blue" | "amber" | "red"
-}) {
-  const colors = {
-    blue: { foreground: "#2d7dd2", background: "#e7f1fb" },
-    amber: { foreground: "#d9820b", background: "#fcf0dd" },
-    red: { foreground: "#e04434", background: "#fbe8e5" },
-  }[tone]
-
-  return (
-    <div className="min-w-0 rounded-[14px] border border-[#e2e7ef] bg-white p-3 shadow-[0_1px_2px_rgba(16,30,60,0.05),0_8px_22px_-14px_rgba(16,30,60,0.2)]">
-      <span className="flex size-8 items-center justify-center rounded-[10px]" style={{ color: colors.foreground, background: colors.background }}>
-        <Icon className="size-4" strokeWidth={2} />
-      </span>
-      <p className="mt-3 font-mono text-[25px] font-semibold leading-none tabular-nums text-[#1a1a2e]">{value}</p>
-      <p className="mt-2 line-clamp-2 text-[10px] font-semibold leading-3.5 text-[#6b7280]">{label}</p>
-    </div>
   )
 }

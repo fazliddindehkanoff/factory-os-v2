@@ -14,6 +14,7 @@ export function TelegramShell({
   userName,
   title,
   subtitle,
+  hero,
   children,
 }: {
   lang: Locale
@@ -21,6 +22,7 @@ export function TelegramShell({
   userName: string
   title: string
   subtitle?: string
+  hero?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -42,7 +44,13 @@ export function TelegramShell({
             </div>
           </div>
         </header>
-        <main id="telegram-main" className="flex-1 px-4 py-4 pb-28">{children}</main>
+        {hero}
+        <main
+          id="telegram-main"
+          className="flex-1 px-4 pb-28 pt-4"
+        >
+          {children}
+        </main>
         <TelegramBottomNav lang={lang} copy={copy} />
       </div>
     </div>

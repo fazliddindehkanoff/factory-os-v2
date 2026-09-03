@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto"
 
+export { normalizePhoneNumber } from "./phone-number.js"
+
 export const TELEGRAM_INIT_DATA_MAX_AGE_SECONDS = 5 * 60
 
 export type TelegramWebAppUser = {
@@ -13,11 +15,6 @@ export type TelegramWebAppUser = {
 export type TelegramInitDataResult =
   | { ok: true; user: TelegramWebAppUser }
   | { ok: false; error: "invalid-init-data" | "expired-init-data" }
-
-export function normalizePhoneNumber(value: string) {
-  const digits = value.replace(/\D/g, "")
-  return digits.startsWith("00") ? digits.slice(2) : digits
-}
 
 export function validateTelegramInitData(
   initData: string,

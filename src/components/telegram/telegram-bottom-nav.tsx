@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
-import { BellIcon, ClipboardListIcon, Clock3Icon } from "lucide-react"
+import { BellIcon, ClipboardListIcon, Clock3Icon, SettingsIcon } from "lucide-react"
 
 import type { Locale } from "@/lib/i18n"
 import type { TelegramCopy } from "@/lib/telegram-copy"
@@ -16,11 +16,12 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
     { href: `/${lang}/telegram/orders`, label: copy.orders, icon: ClipboardListIcon, active: pathname.includes("/orders") && !waitingContext },
     { href: `/${lang}/telegram/orders?scope=waiting`, label: copy.waiting, icon: Clock3Icon, active: pathname.includes("/orders") && waitingContext },
     { href: `/${lang}/telegram/notifications`, label: copy.notifications, icon: BellIcon, active: pathname.includes("/notifications") },
+    { href: `/${lang}/telegram/settings`, label: copy.settings, icon: SettingsIcon, active: pathname.includes("/settings") },
   ]
 
   return (
     <nav aria-label="Telegram Mini App" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[560px] border-t border-[#dfe5ee] bg-white/95 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-2px_14px_-8px_rgba(16,30,60,0.22)] backdrop-blur-md">
-      <div className="grid h-16 grid-cols-3 px-2">
+      <div className="grid h-16 grid-cols-4 px-2">
         {items.map((item) => {
           const Icon = item.icon
           return (
