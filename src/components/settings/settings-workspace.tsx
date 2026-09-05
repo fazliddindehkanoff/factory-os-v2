@@ -133,12 +133,28 @@ export function SettingsWorkspace({
     setDialogOpen(true)
   }
 
-  function persistRecord<K extends SettingsSection>(
+  async function persistRecord<K extends SettingsSection>(
     targetSection: K,
     record: (typeof data)[K][number],
   ) {
-    if (editingId) updateRecord(targetSection, record)
-    else addRecord(targetSection, record)
+    if (!editingId) {
+      addRecord(targetSection, record)
+      return
+    }
+
+    const response = await fetch(
+      `/api/settings/records/${encodeURIComponent(targetSection)}/${encodeURIComponent(editingId)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(record),
+      },
+    )
+    const result = await response.json().catch(() => ({})) as {
+      record?: (typeof data)[K][number]
+    }
+    if (!response.ok || !result.record) throw new Error("record-update-failed")
+    updateRecord(targetSection, result.record)
   }
 
   async function submitRecord(event: React.FormEvent<HTMLFormElement>) {
@@ -207,21 +223,24 @@ export function SettingsWorkspace({
       titleTr: String(form.titleTr ?? ""),
     }
 
-    switch (section) {
+    setSavingRecord(true)
+    setFormError("")
+    try {
+      switch (section) {
       case "positions":
-        persistRecord("positions", { id, ...localized })
+        await persistRecord("positions", { id, ...localized })
         break
       case "product-categories":
-        persistRecord("product-categories", { id, ...localized })
+        await persistRecord("product-categories", { id, ...localized })
         break
       case "order-purposes":
-        persistRecord("order-purposes", { id, ...localized })
+        await persistRecord("order-purposes", { id, ...localized })
         break
       case "branches":
-        persistRecord("branches", { id, ...localized })
+        await persistRecord("branches", { id, ...localized })
         break
       case "unit-types":
-        persistRecord("unit-types", {
+        await persistRecord("unit-types", {
           id,
           ...localized,
           code: String(form.code),
@@ -231,7 +250,7 @@ export function SettingsWorkspace({
         })
         break
       case "products":
-        persistRecord("products", {
+        await persistRecord("products", {
           id,
           ...localized,
           code: String(form.code),
@@ -240,7 +259,7 @@ export function SettingsWorkspace({
         break
       case "roles": {
         const existingRole = data.roles.find((role) => role.id === editingId)
-        persistRecord("roles", {
+        await persistRecord("roles", {
           id,
           ...localized,
           code: String(form.code),
@@ -251,7 +270,7 @@ export function SettingsWorkspace({
         break
       }
       case "warehouses":
-        persistRecord("warehouses", {
+        await persistRecord("warehouses", {
           id,
           ...localized,
           branchIds: form.branchIds as string[],
@@ -259,7 +278,7 @@ export function SettingsWorkspace({
         })
         break
       case "departments":
-        persistRecord("departments", {
+        await persistRecord("departments", {
           id,
           ...localized,
           branchIds: form.branchIds as string[],
@@ -267,7 +286,7 @@ export function SettingsWorkspace({
         })
         break
       case "users":
-        persistRecord("users", {
+        await persistRecord("users", {
           id,
           fullName: String(form.fullName),
           positionId: String(form.positionId),
@@ -279,6 +298,12 @@ export function SettingsWorkspace({
           roleIds: form.roleIds as string[],
         })
         break
+      }
+    } catch {
+      setFormError(messages.recordUpdateFailed)
+      return
+    } finally {
+      setSavingRecord(false)
     }
 
     setDialogOpen(false)
@@ -393,6 +418,28 @@ export function SettingsWorkspace({
     } finally {
       setDeletingIds([])
       setDeletingRecords(false)
+    }
+  }
+
+  async function persistUnitTypeOrder(activeId: string, overId: string) {
+    const units = [...data["unit-types"]].sort((left, right) => left.order - right.order)
+    const activeIndex = units.findIndex((unit) => unit.id === activeId)
+    const overIndex = units.findIndex((unit) => unit.id === overId)
+    if (activeIndex < 0 || overIndex < 0 || activeIndex === overIndex) return
+
+    const [moved] = units.splice(activeIndex, 1)
+    units.splice(overIndex, 0, moved)
+    setListError("")
+    try {
+      const response = await fetch("/api/settings/unit-types/reorder", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: units.map((unit) => unit.id) }),
+      })
+      if (!response.ok) throw new Error("record-update-failed")
+      reorderUnitType(activeId, overId)
+    } catch {
+      setListError(messages.recordUpdateFailed)
     }
   }
 
@@ -603,7 +650,7 @@ export function SettingsWorkspace({
           setDeletingIds(deletableIds)
         }}
         onTranslate={translateRecords}
-        onReorder={reorderUnitType}
+        onReorder={persistUnitTypeOrder}
       />
 
       <Dialog open={deletingIds.length > 0} onOpenChange={(open) => !open && setDeletingIds([])}>
