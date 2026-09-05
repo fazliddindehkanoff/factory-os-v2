@@ -18,72 +18,12 @@ import {
 } from "@/lib/orders"
 import { hasPermission, type PermissionCode } from "@/lib/rbac"
 
-const initialOrders: OrderRecord[] = [
-  {
-    id: "order-2026-0012",
-    number: "ORD-2026-0012",
-    createdByUserId: "user-applicant",
-    type: "material",
-    applicantId: "user-applicant",
-    departmentIds: ["department-production"],
-    branchIds: ["branch-tashkent"],
-    warehouseId: "warehouse-main",
-    purposeId: "purpose-production",
-    expectedDate: "2026-08-22",
-    urgency: "urgent",
-    lines: [
-      { id: "line-0012-1", productId: "product-steel", quantity: 500, note: "" },
-      { id: "line-0012-2", productId: "product-copper-cable", quantity: 120, note: "" },
-    ],
-    comment: "Ishlab chiqarish liniyasi uchun.",
-    attachmentNames: [],
-    status: "supervisor_review",
-    currentStep: "department_supervisor",
-    waitingForUserId: "user-supervisor",
-    lastActorUserId: "user-applicant",
-    createdAt: "2026-08-20T09:30:00.000Z",
-  },
-  {
-    id: "order-2026-0011",
-    number: "ORD-2026-0011",
-    createdByUserId: "user-applicant",
-    type: "service",
-    applicantId: "user-applicant",
-    departmentIds: ["department-procurement"],
-    branchIds: ["branch-samarkand"],
-    warehouseId: "warehouse-samarkand",
-    purposeId: "purpose-maintenance",
-    expectedDate: "2026-08-29",
-    urgency: "normal",
-    lines: [{ id: "line-0011-1", productId: "product-copper-cable", quantity: 40, note: "Montaj bilan" }],
-    comment: "",
-    attachmentNames: ["technical-request.pdf"],
-    status: "approved",
-    currentStep: "complete",
-    lastActorUserId: "user-director",
-    createdAt: "2026-08-19T11:15:00.000Z",
-  },
-  {
-    id: "order-2026-0010",
-    number: "ORD-2026-0010",
-    createdByUserId: "user-applicant",
-    type: "material",
-    applicantId: "user-applicant",
-    departmentIds: ["department-production", "department-procurement"],
-    branchIds: ["branch-tashkent", "branch-samarkand"],
-    warehouseId: "warehouse-main",
-    purposeId: "purpose-production",
-    expectedDate: "2026-08-21",
-    urgency: "critical",
-    lines: [{ id: "line-0010-1", productId: "product-steel", quantity: 250, note: "Shoshilinch" }],
-    comment: "",
-    attachmentNames: [],
-    status: "rejected",
-    currentStep: "complete",
-    lastActorUserId: "user-supervisor",
-    createdAt: "2026-08-18T08:00:00.000Z",
-  },
-]
+const initialOrders: OrderRecord[] = []
+const retiredDemoOrderIds = new Set([
+  "order-2026-0010",
+  "order-2026-0011",
+  "order-2026-0012",
+])
 
 const ORDERS_STORAGE_KEY = "factory-os-demo-orders"
 const NOTIFICATIONS_STORAGE_KEY = "factory-os-demo-notifications"
@@ -147,7 +87,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       const savedOrders = window.localStorage.getItem(ORDERS_STORAGE_KEY)
       const savedNotifications = window.localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)
       if (savedOrders) {
-        const saved = JSON.parse(savedOrders) as OrderRecord[]
+        const saved = (JSON.parse(savedOrders) as OrderRecord[])
+          .filter((order) => !retiredDemoOrderIds.has(order.id))
         const settings = initialSettingsData.current
         setOrders(saved.map((order) => {
           const supervisorId = settings.users.find(
@@ -201,7 +142,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
             : { ...withHistory, waitingForUserId: warehouseResponsibleUserId }
         }))
       }
-      if (savedNotifications) setNotifications(JSON.parse(savedNotifications) as WorkflowNotification[])
+      if (savedNotifications) {
+        setNotifications((JSON.parse(savedNotifications) as WorkflowNotification[])
+          .filter((notification) => !retiredDemoOrderIds.has(notification.orderId)))
+      }
     } finally {
       setStorageReady(true)
     }

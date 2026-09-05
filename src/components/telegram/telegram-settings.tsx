@@ -29,7 +29,7 @@ type EditableProfile = {
   roles: string[]
 }
 
-const inputClassName = "h-12 w-full rounded-[11px] border border-[#d7deea] bg-white px-3.5 text-[15px] text-[#1a1a2e] outline-none transition-[border-color,box-shadow] placeholder:text-[#a4adbb] focus:border-[#2d7dd2] focus:ring-3 focus:ring-[#2d7dd2]/15"
+const inputClassName = "tg-input h-12 w-full rounded-[11px] border px-3.5 text-[15px] outline-none transition-[border-color,box-shadow] placeholder:text-[#8d99ab] focus:border-[#2d7dd2] focus:ring-3 focus:ring-[#2d7dd2]/15"
 
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("")
@@ -194,7 +194,7 @@ export function TelegramSettings({
 
   return (
     <div className="grid gap-4">
-      <section className="rounded-[14px] border border-[#e2e7ef] bg-white p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
+      <section className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
         <div className="flex items-center gap-4">
           <div className="relative shrink-0">
             <Avatar className="size-[76px] rounded-[20px] text-xl">
@@ -206,14 +206,14 @@ export function TelegramSettings({
             </span>
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-base font-bold text-[#1a1a2e]">{profile.fullName}</h2>
-            <p className="mt-0.5 truncate text-xs text-[#6b7280]">@{profile.username}</p>
-            <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-[#8b97aa]">
+            <h2 className="truncate text-base font-bold text-[var(--tg-text)]">{profile.fullName}</h2>
+            <p className="mt-0.5 truncate text-xs text-[var(--tg-text-secondary)]">@{profile.username}</p>
+            <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-[var(--tg-text-muted)]">
               {profile.roles.length ? profile.roles.join(" · ") : copy.employee}
             </p>
           </div>
         </div>
-        <label className="mt-4 flex min-h-11 cursor-pointer touch-manipulation items-center justify-center gap-2 rounded-[11px] border border-[#d7deea] bg-[#fbfcfe] px-4 text-[13px] font-bold text-[#344054] transition-colors active:bg-[#edf1f6]">
+        <label className="tg-secondary-button mt-4 flex min-h-11 cursor-pointer touch-manipulation items-center justify-center gap-2 rounded-[11px] border px-4 text-[13px] font-bold transition-opacity active:opacity-75">
           {uploadingPhoto ? <LoaderCircleIcon className="size-4 animate-spin motion-reduce:animate-none" /> : <CameraIcon className="size-4 text-[#2d7dd2]" />}
           {uploadingPhoto ? copy.uploadingPhoto : copy.choosePhoto}
           <input
@@ -224,7 +224,7 @@ export function TelegramSettings({
             onChange={uploadPhoto}
           />
         </label>
-        <p className="mt-2 text-[11px] leading-4 text-[#8b97aa]">{copy.photoHelp}</p>
+        <p className="mt-2 text-[11px] leading-4 text-[var(--tg-text-muted)]">{copy.photoHelp}</p>
         <FeedbackMessage feedback={photoFeedback} />
       </section>
 
@@ -285,11 +285,11 @@ export function TelegramSettings({
             {profile.telegramConnected ? <CheckCircle2Icon className="size-5" /> : <Link2OffIcon className="size-5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-bold text-[#1a1a2e]">{profile.telegramConnected ? copy.telegramConnected : copy.telegramNotConnected}</p>
-            <p className="mt-0.5 truncate font-mono text-[11px] text-[#6b7280]">{connectedPhoneNumber || "—"}</p>
+            <p className="text-[13px] font-bold text-[var(--tg-text)]">{profile.telegramConnected ? copy.telegramConnected : copy.telegramNotConnected}</p>
+            <p className="mt-0.5 truncate font-mono text-[11px] text-[var(--tg-text-secondary)]">{connectedPhoneNumber || "—"}</p>
           </div>
         </div>
-        {!profile.telegramConnected ? <p className="mt-3 text-xs leading-5 text-[#6b7280]">{copy.relinkTelegram}</p> : null}
+        {!profile.telegramConnected ? <p className="mt-3 text-xs leading-5 text-[var(--tg-text-secondary)]">{copy.relinkTelegram}</p> : null}
         {profile.telegramConnected ? (
           <button
             type="button"
@@ -336,14 +336,14 @@ function SettingsCard({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-[14px] border border-[#e2e7ef] bg-white p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
+    <section className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[#e7f1fb] text-[#2d7dd2]">
           <Icon className="size-[18px]" />
         </span>
         <div className="min-w-0">
-          <h2 className="text-[15px] font-bold text-[#1a1a2e]">{title}</h2>
-          <p className="mt-0.5 text-[11px] leading-4 text-[#8b97aa]">{description}</p>
+          <h2 className="text-[15px] font-bold text-[var(--tg-text)]">{title}</h2>
+          <p className="mt-0.5 text-[11px] leading-4 text-[var(--tg-text-muted)]">{description}</p>
         </div>
       </div>
       <div className="mt-4">{children}</div>
@@ -364,7 +364,7 @@ function Field({
 }) {
   return (
     <div className="grid gap-1.5">
-      <label htmlFor={htmlFor} className="flex items-center gap-1.5 text-xs font-bold text-[#4f5c70]">
+      <label htmlFor={htmlFor} className="flex items-center gap-1.5 text-xs font-bold text-[var(--tg-text-secondary)]">
         <Icon className="size-3.5 text-[#7e8ba0]" />
         {label}
       </label>

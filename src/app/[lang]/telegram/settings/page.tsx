@@ -19,7 +19,7 @@ export default async function Page({ params }: PageProps<"/[lang]/telegram/setti
     <TelegramShell
       lang={lang}
       copy={copy}
-      userName={profile.fullName}
+      userId={session.userId}
       title={copy.settings}
       subtitle={copy.settingsSubtitle}
     >

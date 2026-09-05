@@ -33,18 +33,18 @@ function shortDate(value: string, lang: Locale) {
   return new Intl.DateTimeFormat(localeTag[lang], { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value))
 }
 
-export function TelegramOrderCard({ order, lang, copy, returnToWaiting = false }: { order: TelegramOrderSummary; lang: Locale; copy: TelegramCopy; returnToWaiting?: boolean }) {
+export function TelegramOrderCard({ order, lang, copy, returnQuery = "" }: { order: TelegramOrderSummary; lang: Locale; copy: TelegramCopy; returnQuery?: string }) {
   const visual = telegramStatusVisual[order.status]
 
   return (
     <Link
-      href={`/${lang}/telegram/orders/${encodeURIComponent(order.id)}${returnToWaiting ? "?from=waiting" : ""}`}
-      className="group block min-h-44 touch-manipulation rounded-[14px] border border-[#e2e7ef] bg-white p-[15px] text-left shadow-[0_1px_2px_rgba(16,30,60,0.06)] transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#f8fafc]"
+      href={`/${lang}/telegram/orders/${encodeURIComponent(order.id)}${returnQuery ? `?return=${encodeURIComponent(returnQuery)}` : ""}`}
+      className="tg-card group block min-h-44 touch-manipulation rounded-[14px] border p-[15px] text-left shadow-[0_1px_2px_rgba(16,30,60,0.06)] transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:opacity-80"
     >
       <div className="flex items-start justify-between gap-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <span className="size-2 shrink-0 rounded-full" style={{ background: visual.color }} />
-          <span className="truncate font-mono text-[12px] font-semibold text-[#25324a]">{order.number}</span>
+          <span className="truncate font-mono text-[12px] font-semibold text-[var(--tg-text)]">{order.number}</span>
           {order.waitingForMe ? <span className="shrink-0 rounded-md bg-[#fcf0dd] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#ad6500]">{copy.actionRequired}</span> : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -53,30 +53,30 @@ export function TelegramOrderCard({ order, lang, copy, returnToWaiting = false }
         </div>
       </div>
 
-      <h2 className="mt-2 line-clamp-2 text-[15px] font-bold leading-5 text-[#1a1a2e]">{order.purpose}</h2>
+      <h2 className="mt-2 line-clamp-2 text-[15px] font-bold leading-5 text-[var(--tg-text)]">{order.purpose}</h2>
 
       <dl className="mt-3 grid gap-1.5 border-t border-[#edf0f4] pt-3">
         <div className="flex items-baseline justify-between gap-3 text-xs">
-          <dt className="shrink-0 text-[#8a94a4]">{copy.applicant}</dt>
-          <dd className="truncate text-right font-semibold text-[#39445a]">{order.applicant}</dd>
+          <dt className="shrink-0 text-[var(--tg-text-muted)]">{copy.applicant}</dt>
+          <dd className="truncate text-right font-semibold text-[var(--tg-text-secondary)]">{order.applicant}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-xs">
-          <dt className="shrink-0 text-[#8a94a4]">{copy.department}</dt>
-          <dd className="truncate text-right font-semibold text-[#39445a]">{order.department}</dd>
+          <dt className="shrink-0 text-[var(--tg-text-muted)]">{copy.department}</dt>
+          <dd className="truncate text-right font-semibold text-[var(--tg-text-secondary)]">{order.department}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-xs">
-          <dt className="shrink-0 text-[#8a94a4]">{copy.createdAt}</dt>
-          <dd className="font-mono font-medium tabular-nums text-[#39445a]">{shortDate(order.createdAt, lang)}</dd>
+          <dt className="shrink-0 text-[var(--tg-text-muted)]">{copy.createdAt}</dt>
+          <dd className="font-mono font-medium tabular-nums text-[var(--tg-text-secondary)]">{shortDate(order.createdAt, lang)}</dd>
         </div>
         <div className="flex items-baseline justify-between gap-3 text-xs">
-          <dt className="shrink-0 text-[#8a94a4]">{copy.expectedDate}</dt>
-          <dd className="font-mono font-medium tabular-nums text-[#39445a]">{shortDate(`${order.expectedDate}T00:00:00`, lang)}</dd>
+          <dt className="shrink-0 text-[var(--tg-text-muted)]">{copy.expectedDate}</dt>
+          <dd className="font-mono font-medium tabular-nums text-[var(--tg-text-secondary)]">{shortDate(`${order.expectedDate}T00:00:00`, lang)}</dd>
         </div>
       </dl>
 
       <div className="mt-3 flex items-center justify-between text-[10px] font-semibold">
         <span style={{ color: visual.color }}>{copy.status[order.status]}</span>
-        <span className="font-mono text-[#8a94a4]">{order.itemCount} {copy.items}</span>
+        <span className="font-mono text-[var(--tg-text-muted)]">{order.itemCount} {copy.items}</span>
       </div>
       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[#e7ecf3]" aria-hidden="true">
         <span className="block h-full rounded-full" style={{ width: `${visual.progress}%`, background: visual.color }} />

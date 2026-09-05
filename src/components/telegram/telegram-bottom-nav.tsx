@@ -11,7 +11,8 @@ import { cn } from "@/lib/utils"
 export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: TelegramCopy }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const waitingContext = searchParams.get("scope") === "waiting" || searchParams.get("from") === "waiting"
+  const returnScope = new URLSearchParams(searchParams.get("return") ?? "").get("scope")
+  const waitingContext = searchParams.get("scope") === "waiting" || searchParams.get("from") === "waiting" || returnScope === "waiting"
   const items = [
     { href: `/${lang}/telegram/orders`, label: copy.orders, icon: ClipboardListIcon, active: pathname.includes("/orders") && !waitingContext },
     { href: `/${lang}/telegram/orders?scope=waiting`, label: copy.waiting, icon: Clock3Icon, active: pathname.includes("/orders") && waitingContext },
@@ -20,7 +21,7 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
   ]
 
   return (
-    <nav aria-label="Telegram Mini App" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[560px] border-t border-[#dfe5ee] bg-white/95 pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-2px_14px_-8px_rgba(16,30,60,0.22)] backdrop-blur-md">
+    <nav aria-label="Telegram Mini App" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[560px] border-t border-[var(--tg-border)] bg-[color-mix(in_srgb,var(--tg-card)_95%,transparent)] pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-2px_14px_-8px_rgba(16,30,60,0.22)] backdrop-blur-md">
       <div className="grid h-16 grid-cols-4 px-2">
         {items.map((item) => {
           const Icon = item.icon

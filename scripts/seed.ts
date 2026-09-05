@@ -24,6 +24,10 @@ async function insertIfMissing<T extends { id?: string }>(
 }
 
 async function seed() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED_IN_PRODUCTION !== "true") {
+    throw new Error("Demo seeding is disabled in production. Set ALLOW_DEMO_SEED_IN_PRODUCTION=true only for an intentional disposable environment.")
+  }
+
   await db.insert(schema.permissions).values(permissionCatalog.map((permission) => ({
     code: permission.code,
     module: permission.module,

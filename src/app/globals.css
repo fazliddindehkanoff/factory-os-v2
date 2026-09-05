@@ -134,3 +134,66 @@
     font-size: 90%;
   }
 }
+
+.telegram-app {
+  --tg-frame: #c9d2df;
+  --tg-page: #f4f6f9;
+  --tg-card: #ffffff;
+  --tg-card-muted: #f8fafc;
+  --tg-text: #1a1a2e;
+  --tg-text-secondary: #566175;
+  --tg-text-muted: #8490a2;
+  --tg-border: #e2e7ef;
+  --tg-divider: #e7ebf1;
+  --tg-input: #ffffff;
+  background: var(--tg-frame);
+  color: var(--tg-text);
+  color-scheme: light;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.telegram-app[data-theme="dark"] {
+  --tg-frame: #0a111e;
+  --tg-page: #101827;
+  --tg-card: #182235;
+  --tg-card-muted: #1c2940;
+  --tg-text: #f4f7fb;
+  --tg-text-secondary: #c1cada;
+  --tg-text-muted: #8e9bb0;
+  --tg-border: #2a3952;
+  --tg-divider: #26344b;
+  --tg-input: #111c2e;
+  color-scheme: dark;
+}
+
+.telegram-app .tg-phone {
+  background: var(--tg-page);
+}
+
+.telegram-app .tg-card {
+  background: var(--tg-card);
+  border-color: var(--tg-border);
+  color: var(--tg-text);
+}
+
+.telegram-app .tg-input {
+  background: var(--tg-input);
+  border-color: var(--tg-border);
+  color: var(--tg-text);
+}
+
+.telegram-app .tg-secondary-button {
+  background: var(--tg-card-muted);
+  border-color: var(--tg-border);
+  color: var(--tg-text-secondary);
+}
+
+.telegram-app .tg-divider {
+  border-color: var(--tg-divider);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .telegram-app {
+    transition: none;
+  }
+}

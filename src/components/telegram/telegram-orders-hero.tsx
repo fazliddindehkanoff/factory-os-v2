@@ -1,21 +1,28 @@
+import Link from "next/link"
 import { AlertTriangleIcon, Clock3Icon, FileTextIcon } from "lucide-react"
 
+import type { Locale } from "@/lib/i18n"
 import type { TelegramCopy } from "@/lib/telegram-copy"
+import { cn } from "@/lib/utils"
 
 export function TelegramOrdersHero({
   copy,
+  lang,
   userName,
   roleNames,
   totalCount,
   waitingCount,
   urgentCount,
+  activeShortcut,
 }: {
   copy: TelegramCopy
+  lang: Locale
   userName: string
   roleNames: string[]
   totalCount: number
   waitingCount: number
   urgentCount: number
+  activeShortcut: "all" | "waiting" | "urgent" | null
 }) {
   return (
     <section aria-label={copy.workOverview}>
@@ -31,9 +38,9 @@ export function TelegramOrdersHero({
       </div>
 
       <div className="relative z-10 -mt-8 grid grid-cols-3 gap-2.5 px-4">
-        <HeroMetric icon={FileTextIcon} label={copy.totalOrders} value={totalCount} tone="blue" />
-        <HeroMetric icon={Clock3Icon} label={copy.actionRequired} value={waitingCount} tone="amber" />
-        <HeroMetric icon={AlertTriangleIcon} label={copy.urgentOrders} value={urgentCount} tone="red" />
+        <HeroMetric href={`/${lang}/telegram/orders#orders`} icon={FileTextIcon} label={copy.totalOrders} value={totalCount} tone="blue" active={activeShortcut === "all"} />
+        <HeroMetric href={`/${lang}/telegram/orders?scope=waiting#orders`} icon={Clock3Icon} label={copy.actionRequired} value={waitingCount} tone="amber" active={activeShortcut === "waiting"} />
+        <HeroMetric href={`/${lang}/telegram/orders?urgency=urgent-group#orders`} icon={AlertTriangleIcon} label={copy.urgentOrders} value={urgentCount} tone="red" active={activeShortcut === "urgent"} />
       </div>
     </section>
   )
@@ -44,11 +51,15 @@ function HeroMetric({
   label,
   value,
   tone,
+  href,
+  active,
 }: {
   icon: typeof FileTextIcon
   label: string
   value: number
   tone: "blue" | "amber" | "red"
+  href: string
+  active: boolean
 }) {
   const colors = {
     blue: { foreground: "#2d7dd2", background: "#e7f1fb" },
@@ -57,14 +68,22 @@ function HeroMetric({
   }[tone]
 
   return (
-    <div className="min-w-0 rounded-[14px] border border-[#e2e7ef] bg-white p-3 text-[#1a1a2e] shadow-[0_1px_2px_rgba(16,30,60,0.05),0_8px_22px_-10px_rgba(16,30,60,0.18)]">
+    <Link
+      href={href}
+      scroll
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "tg-card min-w-0 touch-manipulation rounded-[14px] border p-3 shadow-[0_1px_2px_rgba(16,30,60,0.05),0_8px_22px_-10px_rgba(16,30,60,0.18)] transition-[border-color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:scale-[0.97] motion-reduce:transition-none",
+        active && "border-[#2d7dd2] shadow-[0_0_0_2px_rgba(45,125,210,0.14),0_8px_22px_-10px_rgba(16,30,60,0.18)]",
+      )}
+    >
       <div className="flex items-center justify-between gap-2">
         <span className="flex size-7 items-center justify-center rounded-[9px]" style={{ color: colors.foreground, background: colors.background }}>
           <Icon className="size-3.5" strokeWidth={2.1} />
         </span>
         <span className="font-mono text-[24px] font-semibold leading-none tabular-nums">{value}</span>
       </div>
-      <p className="mt-2 line-clamp-2 min-h-7 text-[10px] font-semibold leading-3.5 text-[#6b7280]">{label}</p>
-    </div>
+      <p className="mt-2 line-clamp-2 min-h-7 text-[10px] font-semibold leading-3.5 text-[var(--tg-text-secondary)]">{label}</p>
+    </Link>
   )
 }
