@@ -104,6 +104,7 @@ export async function sendTelegramNotificationForUser(
   orderNumber: string,
   body: string,
   orderId?: string,
+  commentId?: string,
 ) {
   const [user] = await db.select({ telegramChatId: users.telegramChatId })
     .from(users)
@@ -112,9 +113,13 @@ export async function sendTelegramNotificationForUser(
   if (!user?.telegramChatId) return false
 
   const baseUrl = getTelegramWebAppUrl()
-  const webAppUrl = baseUrl && orderId
-    ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}order=${encodeURIComponent(orderId)}`
-    : baseUrl
+  let webAppUrl = baseUrl
+  if (baseUrl && orderId) {
+    const url = new URL(baseUrl)
+    url.searchParams.set("order", orderId)
+    if (commentId) url.searchParams.set("comment", commentId)
+    webAppUrl = url.toString()
+  }
   await sendTelegramMessage(
     user.telegramChatId,
     `${orderNumber}\n${body}`,

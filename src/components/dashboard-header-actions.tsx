@@ -44,6 +44,14 @@ export function DashboardHeaderActions({
     router.push(segments.join("/"))
   }
 
+  function openNotification(orderId: string, commentId?: string) {
+    if (commentId) {
+      router.push(`/${lang}/orders/discussion/${encodeURIComponent(orderId)}?comment=${encodeURIComponent(commentId)}#order-comment-${encodeURIComponent(commentId)}`)
+      return
+    }
+    router.push(`/${lang}/orders?order=${encodeURIComponent(orderId)}`)
+  }
+
   return (
     <div className="flex items-center gap-1 px-4">
       <DropdownMenu>
@@ -93,7 +101,7 @@ export function DashboardHeaderActions({
             <DropdownMenuLabel>{messages.notifications}</DropdownMenuLabel>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          {userNotifications.length ? <div className="max-h-80 overflow-y-auto p-1">{userNotifications.map((notification) => <DropdownMenuItem key={notification.id} className="block whitespace-normal px-2 py-2"><p className="text-xs font-semibold text-primary">{notification.orderNumber}</p><p className="mt-0.5 text-xs leading-relaxed">{formatWorkflowNotification(notification, lang)}</p></DropdownMenuItem>)}</div> : <p className="px-3 py-6 text-center text-sm text-muted-foreground">{messages.noNotifications}</p>}
+          {userNotifications.length ? <div className="max-h-80 overflow-y-auto p-1">{userNotifications.map((notification) => <DropdownMenuItem key={notification.id} className="block cursor-pointer whitespace-normal px-2 py-2" onClick={() => openNotification(notification.orderId, notification.commentId)}><p className="text-xs font-semibold text-primary">{notification.orderNumber}</p><p className="mt-0.5 text-xs leading-relaxed">{formatWorkflowNotification(notification, lang)}</p></DropdownMenuItem>)}</div> : <p className="px-3 py-6 text-center text-sm text-muted-foreground">{messages.noNotifications}</p>}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

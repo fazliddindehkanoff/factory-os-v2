@@ -311,6 +311,26 @@ export const workflowActions = sqliteTable("workflow_actions", {
   createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("workflow_actions_instance_idx").on(table.workflowInstanceId, table.createdAt)])
 
+export const orderComments = sqliteTable("order_comments", {
+  id: text("id").primaryKey(),
+  orderId: text("order_id").notNull(),
+  orderNumber: text("order_number").notNull(),
+  authorUserId: text("author_user_id").references(() => users.id, { onDelete: "set null" }),
+  authorName: text("author_name").notNull(),
+  authorUsername: text("author_username").notNull(),
+  body: text("body").notNull(),
+  replyToId: text("reply_to_id"),
+  createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
+}, (table) => [index("order_comments_order_idx").on(table.orderId, table.createdAt)])
+
+export const orderCommentMentions = sqliteTable("order_comment_mentions", {
+  commentId: text("comment_id").notNull().references(() => orderComments.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+}, (table) => [
+  primaryKey({ columns: [table.commentId, table.userId] }),
+  index("order_comment_mentions_user_idx").on(table.userId),
+])
+
 export const notifications = sqliteTable("notifications", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -319,6 +339,7 @@ export const notifications = sqliteTable("notifications", {
   body: text("body").notNull(),
   resourceType: text("resource_type"),
   resourceId: text("resource_id"),
+  commentId: text("comment_id").references(() => orderComments.id, { onDelete: "set null" }),
   readAt: text("read_at"),
   createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("notifications_user_unread_idx").on(table.userId, table.readAt)])

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { eq } from "drizzle-orm"
+import { desc, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 import { db } from "@/db/client"
@@ -15,6 +15,41 @@ import { sendTelegramNotificationForUser } from "@/lib/telegram-bot"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+export async function GET() {
+  const session = await getSessionUser()
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  const rows = await db.select({
+    id: notifications.id,
+    orderId: notifications.resourceId,
+    orderNumber: notifications.title,
+    message: notifications.body,
+    commentId: notifications.commentId,
+    createdAt: notifications.createdAt,
+    readAt: notifications.readAt,
+  }).from(notifications)
+    .where(eq(notifications.userId, session.userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(100)
+  return NextResponse.json({
+    notifications: rows.map((row) => ({
+      ...row,
+      orderId: row.orderId ?? "",
+      userId: session.userId,
+      commentId: row.commentId ?? undefined,
+      read: Boolean(row.readAt),
+    })),
+  })
+}
+
+export async function PATCH() {
+  const session = await getSessionUser()
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  await db.update(notifications)
+    .set({ readAt: new Date().toISOString() })
+    .where(eq(notifications.userId, session.userId))
+  return NextResponse.json({ ok: true })
+}
 
 function parseEvent(value: unknown): WorkflowNotificationEvent | null {
   if (!value || typeof value !== "object" || !("kind" in value)) return null

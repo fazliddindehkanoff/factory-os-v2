@@ -14,6 +14,13 @@ import {
   workflowSteps,
   truncateLabel,
 } from "../src/lib/orders.ts"
+import { containsUserMention } from "../src/lib/mentions.ts"
+
+test("mentions match a complete username without matching prefixes", () => {
+  assert.equal(containsUserMention("Please check this, @sarvar.", "sarvar"), true)
+  assert.equal(containsUserMention("Please check this, @sarvarjon.", "sarvar"), false)
+  assert.equal(containsUserMention("@SARVAR please check", "sarvar"), true)
+})
 
 test("assistant-created requests still require the selected supervisor approval", () => {
   assert.equal(shouldSkipSupervisorApproval("user-assistant", "user-supervisor"), false)

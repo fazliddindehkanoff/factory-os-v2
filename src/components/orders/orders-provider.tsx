@@ -157,6 +157,38 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications))
   }, [notifications, orders, storageReady])
 
+  React.useEffect(() => {
+    if (!currentUserId) return
+    let cancelled = false
+    async function refreshNotifications() {
+      try {
+        const response = await fetch("/api/notifications", { cache: "no-store" })
+        if (!response.ok) return
+        const payload = await response.json() as { notifications?: WorkflowNotification[] }
+        if (cancelled) return
+        setNotifications((current) => {
+          const merged = new Map((payload.notifications ?? []).map((item) => [item.id, item]))
+          for (const item of current) {
+            const remote = merged.get(item.id)
+            merged.set(item.id, remote ? { ...item, ...remote, event: item.event } : item)
+          }
+          return [...merged.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100)
+        })
+      } catch {
+        // Local notifications remain usable while the server is unavailable.
+      }
+    }
+    void refreshNotifications()
+    const interval = window.setInterval(refreshNotifications, 30_000)
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") void refreshNotifications() }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [currentUserId])
+
   function assigneeFor(
     step: WorkflowStep,
     order: Pick<OrderRecord, "applicantId" | "departmentIds" | "warehouseId" | "procurementSpecialistUserId">,
@@ -547,6 +579,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
   function markNotificationsRead() {
     setNotifications((current) => current.map((item) => item.userId === currentUserId ? { ...item, read: true } : item))
+    void fetch("/api/notifications", { method: "PATCH" })
   }
 
   function addOrderComment(orderId: string, body: string, replyToId?: string) {

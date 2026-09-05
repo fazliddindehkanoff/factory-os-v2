@@ -73,8 +73,11 @@ export const ORDER_COMMENT_MAX_LENGTH = 2_000
 export type OrderComment = {
   id: string
   authorUserId: string
+  authorName?: string
+  authorUsername?: string
   body: string
   replyToId?: string
+  mentionedUserIds?: string[]
   createdAt: string
 }
 
@@ -88,6 +91,7 @@ export type WorkflowNotification = {
   userId: string
   orderId: string
   orderNumber: string
+  commentId?: string
   event?: WorkflowNotificationEvent
   message?: string
   createdAt: string

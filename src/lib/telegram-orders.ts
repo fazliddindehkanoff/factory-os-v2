@@ -6,6 +6,8 @@ import { db } from "@/db/client"
 import {
   departments,
   notifications,
+  orderCommentMentions,
+  orderComments,
   orderLines,
   orderPurposes,
   orders,
@@ -55,6 +57,14 @@ export type TelegramOrderSummary = {
 export type TelegramOrderDetail = TelegramOrderSummary & {
   comment: string
   lines: Array<{ id: string; product: string; unit: string; quantity: number; note: string }>
+  comments: Array<{
+    id: string
+    authorName: string
+    authorUsername: string
+    body: string
+    replyToId?: string
+    createdAt: string
+  }>
 }
 
 export async function getTelegramUserProfile(userId: string, lang: Locale) {
@@ -175,7 +185,7 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
   const order = rows.find((row) => row.id === orderId)
   if (!order) return null
   const localized = localeField[lang]
-  const [lines, waitingIds] = await Promise.all([
+  const [lines, waitingIds, comments] = await Promise.all([
     db.select({
       id: orderLines.id,
       product: localized.product,
@@ -189,6 +199,16 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
       .where(eq(orderLines.orderId, orderId))
       .orderBy(orderLines.sortOrder),
     getWaitingOrderIds(userId),
+    db.select({
+      id: orderComments.id,
+      authorName: orderComments.authorName,
+      authorUsername: orderComments.authorUsername,
+      body: orderComments.body,
+      replyToId: orderComments.replyToId,
+      createdAt: orderComments.createdAt,
+    }).from(orderComments)
+      .where(eq(orderComments.orderId, orderId))
+      .orderBy(orderComments.createdAt),
   ])
   return {
     id: order.id,
@@ -206,6 +226,10 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
     waitingForMe: waitingIds.has(order.id),
     comment: order.comment,
     lines: lines.map((line) => ({ ...line, unit: line.unit ?? "" })),
+    comments: comments.map((comment) => ({
+      ...comment,
+      replyToId: comment.replyToId ?? undefined,
+    })),
   } satisfies TelegramOrderDetail
 }
 
@@ -215,6 +239,7 @@ export async function getTelegramNotifications(userId: string) {
     title: notifications.title,
     body: notifications.body,
     orderId: notifications.resourceId,
+    commentId: notifications.commentId,
     readAt: notifications.readAt,
     createdAt: notifications.createdAt,
   })
@@ -222,4 +247,35 @@ export async function getTelegramNotifications(userId: string) {
     .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt))
     .limit(100)
+}
+
+export async function getMentionedOrderDiscussion(userId: string, orderId: string) {
+  const [mention] = await db.select({ commentId: orderCommentMentions.commentId })
+    .from(orderCommentMentions)
+    .innerJoin(orderComments, eq(orderCommentMentions.commentId, orderComments.id))
+    .where(and(
+      eq(orderCommentMentions.userId, userId),
+      eq(orderComments.orderId, orderId),
+    ))
+    .limit(1)
+  if (!mention) return null
+
+  const comments = await db.select({
+    id: orderComments.id,
+    orderNumber: orderComments.orderNumber,
+    authorUserId: orderComments.authorUserId,
+    authorName: orderComments.authorName,
+    authorUsername: orderComments.authorUsername,
+    body: orderComments.body,
+    replyToId: orderComments.replyToId,
+    createdAt: orderComments.createdAt,
+  }).from(orderComments)
+    .where(eq(orderComments.orderId, orderId))
+    .orderBy(orderComments.createdAt)
+  if (!comments.length) return null
+  return {
+    orderId,
+    orderNumber: comments[0].orderNumber,
+    comments: comments.map((comment) => ({ ...comment, replyToId: comment.replyToId ?? undefined })),
+  }
 }

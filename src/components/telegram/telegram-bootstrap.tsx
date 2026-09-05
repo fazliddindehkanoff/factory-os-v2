@@ -56,9 +56,11 @@ export function TelegramBootstrap({ lang }: { lang: Locale }) {
           body: JSON.stringify({ initData: webApp.initData }),
         })
         if (!response.ok) throw new Error("Telegram authentication failed")
-        const requestedOrder = new URLSearchParams(window.location.search).get("order")
+        const launchParams = new URLSearchParams(window.location.search)
+        const requestedOrder = launchParams.get("order")
+        const requestedComment = launchParams.get("comment")
         const target = requestedOrder && /^[a-zA-Z0-9_-]{1,128}$/.test(requestedOrder)
-          ? `/${lang}/telegram/orders/${encodeURIComponent(requestedOrder)}`
+          ? `/${lang}/telegram/orders/${encodeURIComponent(requestedOrder)}${requestedComment && /^[a-zA-Z0-9_-]{1,128}$/.test(requestedComment) ? `?comment=${encodeURIComponent(requestedComment)}#order-comment-${encodeURIComponent(requestedComment)}` : ""}`
           : `/${lang}/telegram/orders`
         window.location.replace(target)
       } catch {
