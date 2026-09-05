@@ -53,7 +53,7 @@ export function TelegramOrdersFilters({
         <FilterIcon className="size-4 text-[#8a94a4] transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" />
       </summary>
 
-      <form action={`/${lang}/telegram/orders#orders`} method="get" onSubmit={applyFilters} className="tg-divider grid gap-3 border-t p-3.5">
+      <form onSubmit={applyFilters} className="tg-divider grid gap-3 border-t p-3.5">
         {waitingOnly ? <input type="hidden" name="scope" value="waiting" /> : null}
         <label className="grid gap-1.5 text-[11px] font-bold text-[var(--tg-text-secondary)]">
           {copy.searchOrders}
