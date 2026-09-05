@@ -86,6 +86,7 @@ export function SettingsWorkspace({
   const [excelOperation, setExcelOperation] = React.useState<"upload" | "download" | null>(null)
   const [translating, setTranslating] = React.useState(false)
   const [savingRecord, setSavingRecord] = React.useState(false)
+  const [deletingRecords, setDeletingRecords] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [form, setForm] = React.useState<FormState>(createInitialForm(section))
   const sectionTitle = getSectionTitle(section, messages)
@@ -357,6 +358,44 @@ export function SettingsWorkspace({
     }
   }
 
+  async function confirmDeleteRecords() {
+    setDeletingRecords(true)
+    setListError("")
+    setListNotice("")
+
+    const deletedIds: string[] = []
+    let failure: "record-in-use" | "cannot-delete-current-user" | "delete-failed" | null = null
+
+    try {
+      for (const id of deletingIds) {
+        const response = await fetch(
+          `/api/settings/records/${encodeURIComponent(section)}/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        )
+        const result = await response.json().catch(() => ({})) as { error?: string }
+        if (response.ok) {
+          deletedIds.push(id)
+          continue
+        }
+        if (result.error === "record-in-use") failure = "record-in-use"
+        else if (result.error === "cannot-delete-current-user") failure = "cannot-delete-current-user"
+        else if (!failure) failure = "delete-failed"
+      }
+
+      deletedIds.forEach((id) => deleteRecord(section, id))
+      if (failure === "record-in-use") setListError(messages.recordDeleteInUse)
+      else if (failure === "cannot-delete-current-user") setListError(messages.cannotDeleteCurrentUser)
+      else if (failure) setListError(messages.recordDeleteFailed)
+      else setListNotice(messages.recordsDeleted.replace("{count}", String(deletedIds.length)))
+    } catch {
+      deletedIds.forEach((id) => deleteRecord(section, id))
+      setListError(messages.recordDeleteFailed)
+    } finally {
+      setDeletingIds([])
+      setDeletingRecords(false)
+    }
+  }
+
   async function downloadProducts() {
     setListError("")
     setListNotice("")
@@ -581,13 +620,11 @@ export function SettingsWorkspace({
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
-                deletingIds.forEach((id) => deleteRecord(section, id))
-                setDeletingIds([])
-              }}
+              disabled={deletingRecords}
+              onClick={confirmDeleteRecords}
             >
-              <Trash2Icon />
-              {messages.delete}
+              {deletingRecords ? <LoaderCircleIcon className="animate-spin" /> : <Trash2Icon />}
+              {deletingRecords ? messages.deleting : messages.delete}
             </Button>
           </DialogFooter>
         </DialogContent>
