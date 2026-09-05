@@ -4,6 +4,7 @@ import * as React from "react"
 
 import { useOrders } from "@/components/orders/orders-provider"
 import { useSettings } from "@/components/settings/settings-provider"
+import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
   calculateQuotationTotal,
   isExpectedDeliveryDateAllowed,
@@ -72,12 +73,12 @@ type ProcurementContextValue = {
   quotations: QuotationRecord[]
   suppliers: SupplierRecord[]
   storageReady: boolean
-  addSupplier: (supplier: SupplierInput) => void
+  addSupplier: (supplier: SupplierInput) => Promise<boolean>
   updateSupplier: (supplier: SupplierRecord) => void
   archiveSupplier: (id: string) => void
   findSupplierByPhone: (phone: string) => SupplierRecord | undefined
   assignSpecialist: (procurementCaseId: string, specialistUserId: string) => boolean
-  addQuotation: (quotation: QuotationInput) => boolean
+  addQuotation: (quotation: QuotationInput) => Promise<boolean>
   submitForReview: (procurementCaseId: string) => boolean
   approveQuotation: (procurementCaseId: string, quotationId: string) => boolean
   rejectOffers: (procurementCaseId: string, comment: string) => boolean
@@ -125,6 +126,22 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     window.localStorage.setItem(SUPPLIERS_STORAGE_KEY, JSON.stringify(suppliers))
   }, [quotations, storageReady, storedCases, suppliers])
 
+  React.useEffect(() => {
+    if (!currentUserId || !storageReady) return
+    let cancelled = false
+    void Promise.all([
+      loadAppRecords<SupplierRecord>("suppliers").catch(() => []),
+      loadAppRecords<QuotationRecord>("quotations").catch(() => []),
+      loadAppRecords<ProcurementCase>("procurement-cases").catch(() => []),
+    ]).then(([serverSuppliers, serverQuotations, serverCases]) => {
+      if (cancelled) return
+      setSuppliers((current) => mergeRecords(current, serverSuppliers))
+      setQuotations((current) => mergeRecords(current, serverQuotations))
+      setStoredCases((current) => mergeRecords(current, serverCases))
+    })
+    return () => { cancelled = true }
+  }, [currentUserId, storageReady])
+
   const cases = React.useMemo(() => {
     if (!ordersReady || !storageReady) return storedCases
     const procurementOrders = orders.filter((order) =>
@@ -164,12 +181,20 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     return next
   }, [orders, ordersReady, storageReady, storedCases])
 
-  function addSupplier(supplier: SupplierInput) {
-    if (!can("suppliers.manage")) return
-    setSuppliers((current) => [
-      { ...supplier, id: `supplier-${crypto.randomUUID()}`, status: "active" },
-      ...current,
-    ])
+  async function addSupplier(supplier: SupplierInput) {
+    if (!can("suppliers.manage")) return false
+    const record: SupplierRecord = {
+      ...supplier,
+      id: `supplier-${crypto.randomUUID()}`,
+      status: "active",
+    }
+    try {
+      const persisted = await createAppRecord("suppliers", record)
+      setSuppliers((current) => [persisted, ...current.filter((item) => item.id !== persisted.id)])
+      return true
+    } catch {
+      return false
+    }
   }
 
   function updateSupplier(supplier: SupplierRecord) {
@@ -224,7 +249,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     return true
   }
 
-  function addQuotation(quotation: QuotationInput) {
+  async function addQuotation(quotation: QuotationInput) {
     if (!can("procurement.quote")) return false
     const procurementCase = cases.find((item) => item.id === quotation.procurementCaseId)
     const matchedSupplier = findSupplierByPhone(quotation.supplierPhone)
@@ -261,7 +286,6 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
           !isExpectedDeliveryDateAllowed(line.expectedDeliveryDate),
       )
     ) return false
-    if (!matchedSupplier) setSuppliers((current) => [supplier, ...current])
     const normalizedLines = requiredLines.map((line) => ({
       orderLineId: line.id,
       quantity: Math.max(0, line.quantity - (line.availableQuantity ?? 0)),
@@ -281,7 +305,16 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       createdByUserId: currentUserId,
       createdAt: new Date().toISOString(),
     }
-    setQuotations((current) => [...current, record])
+    try {
+      if (!matchedSupplier) {
+        const persistedSupplier = await createAppRecord("suppliers", supplier)
+        setSuppliers((current) => [persistedSupplier, ...current.filter((item) => item.id !== persistedSupplier.id)])
+      }
+      const persisted = await createAppRecord("quotations", record)
+      setQuotations((current) => [...current.filter((item) => item.id !== persisted.id), persisted])
+    } catch {
+      return false
+    }
     updateCase(quotation.procurementCaseId, { updatedAt: record.createdAt })
     return true
   }
@@ -395,4 +428,10 @@ function legacyDeliveryDate(createdAt: string, leadTimeDays?: number) {
   if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
   date.setUTCDate(date.getUTCDate() + Math.max(0, leadTimeDays ?? 0))
   return date.toISOString().slice(0, 10)
+}
+
+function mergeRecords<T extends { id: string }>(local: T[], server: T[]) {
+  const merged = new Map(local.map((record) => [record.id, record]))
+  for (const record of server) merged.set(record.id, record)
+  return [...merged.values()]
 }

@@ -353,3 +353,18 @@ export const auditEvents = sqliteTable("audit_events", {
   metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
   createdAt: text("created_at").notNull().default(sql`(CURRENT_TIMESTAMP)`),
 }, (table) => [index("audit_entity_idx").on(table.entityType, table.entityId, table.createdAt)])
+
+// Client-facing operational modules still use richer view models than the
+// normalized workflow tables above. Persist those records here so a successful
+// create is owned by the server and survives browsers, sessions, and deploys.
+export const appRecords = sqliteTable("app_records", {
+  namespace: text("namespace").notNull(),
+  id: text("id").notNull(),
+  payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.namespace, table.id] }),
+  index("app_records_namespace_created_idx").on(table.namespace, table.createdAt),
+  index("app_records_creator_idx").on(table.createdByUserId),
+])

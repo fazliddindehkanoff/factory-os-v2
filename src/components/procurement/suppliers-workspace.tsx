@@ -138,15 +138,21 @@ function SupplierDialog({ supplier, messages, open, onOpenChange }: {
   const [contactPerson, setContactPerson] = React.useState(supplier?.contactPerson ?? "")
   const [category, setCategory] = React.useState(supplier?.category ?? "")
   const [error, setError] = React.useState("")
+  const [saving, setSaving] = React.useState(false)
 
-  function save() {
+  async function save() {
     if (!name.trim()) {
       setError(messages.requiredSupplierName)
       return
     }
     const fields = { name: name.trim(), inn: inn.trim(), phone: phone.trim(), email: email.trim(), contactPerson: contactPerson.trim(), category: category.trim() }
+    setSaving(true)
     if (supplier) updateSupplier({ ...supplier, ...fields })
-    else addSupplier(fields)
+    else if (!await addSupplier(fields)) {
+      setError(messages.recordUpdateFailed)
+      setSaving(false)
+      return
+    }
     onOpenChange(false)
   }
 
@@ -168,7 +174,7 @@ function SupplierDialog({ supplier, messages, open, onOpenChange }: {
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>{messages.cancel}</Button>
-          <Button onClick={save}>{messages.save}</Button>
+          <Button onClick={save} disabled={saving}>{messages.save}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

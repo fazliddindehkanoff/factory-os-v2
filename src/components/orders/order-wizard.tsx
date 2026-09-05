@@ -415,7 +415,7 @@ function OrderWizardForm({
     try {
       order = revisionOrder
         ? resubmitOrder(revisionOrder.id, payload)
-        : addOrder(payload)
+        : await addOrder(payload)
     } catch {
       setError(revisionCopy(lang).unableToResubmit)
       setPublishing(false)

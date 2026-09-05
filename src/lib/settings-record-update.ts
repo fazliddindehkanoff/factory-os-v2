@@ -9,6 +9,7 @@ type SettingsRecordUpdate = {
   code?: string
   order?: number
   categoryId?: string
+  unitTypeId?: string
   permissions?: PermissionCode[]
   branchIds?: string[]
   responsibleUserId?: string
@@ -65,8 +66,9 @@ export function parseSettingsRecordUpdate(
   if (section === "products") {
     const code = readString(source.code, 100)
     const categoryId = readString(source.categoryId, 200)
+    const unitTypeId = readString(source.unitTypeId, 200)
     return code && categoryId
-      ? { ok: true, value: { ...localized, code, categoryId } }
+      ? { ok: true, value: { ...localized, code, categoryId, unitTypeId: unitTypeId || undefined } }
       : { ok: false, error: "invalid-record" }
   }
 

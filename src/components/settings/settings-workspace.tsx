@@ -138,7 +138,19 @@ export function SettingsWorkspace({
     record: (typeof data)[K][number],
   ) {
     if (!editingId) {
-      addRecord(targetSection, record)
+      const response = await fetch(
+        `/api/settings/records/${encodeURIComponent(targetSection)}/${encodeURIComponent(record.id)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(record),
+        },
+      )
+      const result = await response.json().catch(() => ({})) as {
+        record?: (typeof data)[K][number]
+      }
+      if (!response.ok || !result.record) throw new Error("record-create-failed")
+      addRecord(targetSection, result.record)
       return
     }
 
@@ -174,12 +186,13 @@ export function SettingsWorkspace({
       setFormError(messages.productTitleTooLong)
       return
     }
-    if (section === "users" && editingId) {
+    const id = editingId ?? `${section}-${crypto.randomUUID()}`
+    if (section === "users") {
       setSavingRecord(true)
       setFormError("")
       try {
-        const response = await fetch(`/api/settings/users/${encodeURIComponent(editingId)}`, {
-          method: "PATCH",
+        const response = await fetch(`/api/settings/users/${encodeURIComponent(id)}`, {
+          method: editingId ? "PATCH" : "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fullName: String(form.fullName),
@@ -216,7 +229,6 @@ export function SettingsWorkspace({
       }
       return
     }
-    const id = editingId ?? `${section}-${crypto.randomUUID()}`
     const localized = {
       titleUz: String(form.titleUz ?? ""),
       titleRu: String(form.titleRu ?? ""),
@@ -283,19 +295,6 @@ export function SettingsWorkspace({
           ...localized,
           branchIds: form.branchIds as string[],
           warehouseIds: form.warehouseIds as string[],
-        })
-        break
-      case "users":
-        await persistRecord("users", {
-          id,
-          fullName: String(form.fullName),
-          positionId: String(form.positionId),
-          username: String(form.username),
-          password: String(form.password),
-          telegramChatId: String(form.telegramChatId),
-          phoneNumber: String(form.phoneNumber),
-          departmentIds: form.departmentIds as string[],
-          roleIds: form.roleIds as string[],
         })
         break
       }

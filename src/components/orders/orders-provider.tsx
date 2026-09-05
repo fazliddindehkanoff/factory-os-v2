@@ -3,6 +3,7 @@
 import * as React from "react"
 
 import { useSettings } from "@/components/settings/settings-provider"
+import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
   canCreateRequestForApplicant,
   canUserViewRejectedOrder,
@@ -32,7 +33,7 @@ type OrdersContextValue = {
   orders: OrderRecord[]
   notifications: WorkflowNotification[]
   storageReady: boolean
-  addOrder: (order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => OrderRecord
+  addOrder: (order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => Promise<OrderRecord>
   resubmitOrder: (orderId: string, order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => OrderRecord | undefined
   approveOrder: (orderId: string) => void
   rejectOrder: (orderId: string) => void
@@ -158,6 +159,20 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   }, [notifications, orders, storageReady])
 
   React.useEffect(() => {
+    if (!currentUserId || !storageReady) return
+    let cancelled = false
+    void loadAppRecords<OrderRecord>("orders").then((serverOrders) => {
+      if (cancelled) return
+      setOrders((current) => {
+        const merged = new Map(current.map((order) => [order.id, order]))
+        for (const order of serverOrders) merged.set(order.id, order)
+        return [...merged.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      })
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [currentUserId, storageReady])
+
+  React.useEffect(() => {
     if (!currentUserId) return
     let cancelled = false
     async function refreshNotifications() {
@@ -272,7 +287,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     )
   }
 
-  function addOrder(order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) {
+  async function addOrder(order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) {
     const creator = data.users.find((user) => user.id === currentUserId)
     const applicantId = creator
       ? resolveOrderApplicantId(creator, order.applicantId)
@@ -319,9 +334,10 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
           }]
         : [],
     }
-    setOrders((current) => [record, ...current])
-    notify(record.waitingForUserId, record, { kind: "action_required" })
-    return record
+    const persisted = await createAppRecord("orders", record)
+    setOrders((current) => [persisted, ...current.filter((item) => item.id !== persisted.id)])
+    notify(persisted.waitingForUserId, persisted, { kind: "action_required" })
+    return persisted
   }
 
   function resubmitOrder(

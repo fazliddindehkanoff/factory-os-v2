@@ -32,11 +32,14 @@ import {
   type FinancePayment,
   type FinancePaymentStatus,
   type FinanceRequestSnapshot,
+  type FinanceTransaction,
 } from "@/lib/finance"
 import type { Locale } from "@/lib/i18n"
+import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import { cn } from "@/lib/utils"
 
 type StatusFilter = "all" | FinancePaymentStatus
+type PersistedFinanceTransaction = FinanceTransaction & { paymentId: string }
 
 export function FinanceWorkspace({ lang }: { lang: Locale }) {
   const { can } = useAuthorization()
@@ -47,6 +50,37 @@ export function FinanceWorkspace({ lang }: { lang: Locale }) {
   const [selectedPayment, setSelectedPayment] = React.useState<FinancePayment | null>(null)
   const [selectedRequest, setSelectedRequest] = React.useState<FinanceRequestSnapshot | null>(null)
   const [paymentToRecord, setPaymentToRecord] = React.useState<FinancePayment | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    void loadAppRecords<PersistedFinanceTransaction>("finance-transactions").then((transactions) => {
+      if (cancelled) return
+      setPayments((current) => current.map((payment) => {
+        const persisted = transactions.filter((transaction) => transaction.paymentId === payment.id)
+        if (!persisted.length) return payment
+        const merged = new Map(payment.transactions.map((transaction) => [transaction.id, transaction]))
+        for (const persistedTransaction of persisted) {
+          const transaction: FinanceTransaction = {
+            id: persistedTransaction.id,
+            date: persistedTransaction.date,
+            amount: persistedTransaction.amount,
+            method: persistedTransaction.method,
+            reference: persistedTransaction.reference,
+          }
+          merged.set(transaction.id, transaction)
+        }
+        const nextTransactions = [...merged.values()]
+        const paidAmount = Math.min(payment.amount, nextTransactions.reduce((sum, item) => sum + item.amount, 0))
+        return {
+          ...payment,
+          transactions: nextTransactions,
+          paidAmount,
+          status: paidAmount >= payment.amount ? "paid" : paidAmount > 0 ? "partial" : payment.status,
+        }
+      }))
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [])
 
   if (!can("finance.view")) {
     return <AccessDenied lang={lang} permissions={["finance.view"]} />
@@ -76,7 +110,16 @@ export function FinanceWorkspace({ lang }: { lang: Locale }) {
     setPaymentToRecord(payment)
   }
 
-  function recordPayment(paymentId: string, amount: number, date: string, method: "bank" | "cash", reference: string) {
+  async function recordPayment(paymentId: string, amount: number, date: string, method: "bank" | "cash", reference: string) {
+    const transaction: PersistedFinanceTransaction = {
+      id: `transaction-${crypto.randomUUID()}`,
+      paymentId,
+      date,
+      amount,
+      method,
+      reference: reference.trim() || copy.noReference,
+    }
+    await createAppRecord("finance-transactions", transaction)
     setPayments((current) => current.map((payment) => {
       if (payment.id !== paymentId) return payment
       const paidAmount = Math.min(payment.amount, payment.paidAmount + amount)
@@ -84,13 +127,7 @@ export function FinanceWorkspace({ lang }: { lang: Locale }) {
         ...payment,
         paidAmount,
         status: paidAmount >= payment.amount ? "paid" : "partial",
-        transactions: [...payment.transactions, {
-          id: `transaction-${crypto.randomUUID()}`,
-          date,
-          amount,
-          method,
-          reference: reference.trim() || copy.noReference,
-        }],
+        transactions: [...payment.transactions, transaction],
       }
     }))
     setPaymentToRecord(null)
@@ -254,7 +291,7 @@ function RequestDetailsDialog({ request, lang, onOpenChange }: { request: Financ
   </DialogContent></Dialog>
 }
 
-function RecordPaymentDialog({ payment, lang, onOpenChange, onSubmit }: { payment: FinancePayment; lang: Locale; onOpenChange: (open: boolean) => void; onSubmit: (paymentId: string, amount: number, date: string, method: "bank" | "cash", reference: string) => void }) {
+function RecordPaymentDialog({ payment, lang, onOpenChange, onSubmit }: { payment: FinancePayment; lang: Locale; onOpenChange: (open: boolean) => void; onSubmit: (paymentId: string, amount: number, date: string, method: "bank" | "cash", reference: string) => Promise<void> }) {
   const copy = financeCopy[lang]
   const balance = financePaymentBalance(payment)
   const [amount, setAmount] = React.useState(String(balance))
@@ -262,11 +299,18 @@ function RecordPaymentDialog({ payment, lang, onOpenChange, onSubmit }: { paymen
   const [method, setMethod] = React.useState<"bank" | "cash">("bank")
   const [reference, setReference] = React.useState("")
   const [error, setError] = React.useState("")
-  function submit(event: React.FormEvent) {
+  const [saving, setSaving] = React.useState(false)
+  async function submit(event: React.FormEvent) {
     event.preventDefault()
     const value = Number(amount)
     if (!Number.isFinite(value) || value <= 0 || value > balance) { setError(copy.invalidPayment.replace("{amount}", money(balance, lang))); return }
-    onSubmit(payment.id, value, paymentDate, method, reference)
+    setSaving(true)
+    try {
+      await onSubmit(payment.id, value, paymentDate, method, reference)
+    } catch {
+      setError(copy.invalidPayment.replace("{amount}", money(balance, lang)))
+      setSaving(false)
+    }
   }
 
   return <Dialog open onOpenChange={onOpenChange}><DialogContent className="sm:max-w-lg"><form onSubmit={submit} className="contents">
@@ -278,7 +322,7 @@ function RecordPaymentDialog({ payment, lang, onOpenChange, onSubmit }: { paymen
       <div className="grid gap-2"><Label htmlFor="finance-payment-reference">{copy.reference}</Label><Input id="finance-payment-reference" value={reference} onChange={(event) => setReference(event.target.value)} placeholder="BANK-2026-..." /></div>
     </div>
     {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-    <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{copy.cancel}</Button><Button type="submit">{copy.savePayment}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{copy.cancel}</Button><Button type="submit" disabled={saving}>{copy.savePayment}</Button></DialogFooter>
   </form></DialogContent></Dialog>
 }
 

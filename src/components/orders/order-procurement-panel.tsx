@@ -115,7 +115,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
     if (!findSupplierByPhone(phone)) setNewSupplierName("")
   }
 
-  function handleAddOffer() {
+  async function handleAddOffer() {
     setError("")
     const lines = requiredLines.map((line) => ({
       orderLineId: line.id,
@@ -137,7 +137,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
       setError(copy.completeOffer)
       return
     }
-    const added = addQuotation({
+    const added = await addQuotation({
       procurementCaseId,
       supplierPhone,
       supplierName: matchedSupplier?.name ?? newSupplierName,

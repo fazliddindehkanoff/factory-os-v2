@@ -19,6 +19,87 @@ import { parseSettingsUserUpdateInput } from "@/lib/settings-user-input"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
+export async function PUT(
+  request: Request,
+  context: RouteContext<"/api/settings/users/[id]">,
+) {
+  const session = await getSessionUser()
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  if (!await userHasPermission(session.userId, "users.manage")) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  }
+
+  const { id } = await context.params
+  if (!id || id.length > 200) return NextResponse.json({ error: "invalid-user" }, { status: 400 })
+  const parsed = parseSettingsUserUpdateInput(await request.json().catch(() => null))
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+  const input = parsed.value
+  if (!input.password) return NextResponse.json({ error: "invalid-password" }, { status: 400 })
+
+  const [matchingPosition, matchingRoles, matchingDepartments] = await Promise.all([
+    db.select({ id: positions.id }).from(positions).where(eq(positions.id, input.positionId)).limit(1),
+    input.roleIds.length
+      ? db.select({ id: roles.id }).from(roles).where(inArray(roles.id, input.roleIds))
+      : Promise.resolve([]),
+    input.departmentIds.length
+      ? db.select({ id: departments.id }).from(departments).where(inArray(departments.id, input.departmentIds))
+      : Promise.resolve([]),
+  ])
+  if (
+    !matchingPosition.length ||
+    matchingRoles.length !== input.roleIds.length ||
+    matchingDepartments.length !== input.departmentIds.length
+  ) {
+    return NextResponse.json({ error: "invalid-user" }, { status: 400 })
+  }
+
+  const passwordHash = await hashPassword(input.password)
+  try {
+    await db.transaction(async (transaction) => {
+      await transaction.insert(users).values({
+        id,
+        fullName: input.fullName,
+        positionId: input.positionId,
+        username: input.username,
+        passwordHash,
+        telegramChatId: input.telegramChatId || null,
+        phoneNumber: input.phoneNumber || null,
+      })
+      if (input.roleIds.length) {
+        await transaction.insert(userRoles).values(input.roleIds.map((roleId) => ({ userId: id, roleId })))
+      }
+      if (input.departmentIds.length) {
+        await transaction.insert(userDepartments).values(
+          input.departmentIds.map((departmentId) => ({ userId: id, departmentId })),
+        )
+      }
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message.toLocaleLowerCase() : ""
+    if (message.includes("unique constraint failed: users.username")) {
+      return NextResponse.json({ error: "username-exists" }, { status: 409 })
+    }
+    if (message.includes("unique constraint failed")) {
+      return NextResponse.json({ error: "user-exists" }, { status: 409 })
+    }
+    return NextResponse.json({ error: "user-create-failed" }, { status: 500 })
+  }
+
+  return NextResponse.json({
+    user: {
+      id,
+      fullName: input.fullName,
+      positionId: input.positionId,
+      username: input.username,
+      password: "••••••••",
+      telegramChatId: input.telegramChatId,
+      phoneNumber: input.phoneNumber,
+      departmentIds: input.departmentIds,
+      roleIds: input.roleIds,
+    },
+  }, { status: 201 })
+}
+
 export async function PATCH(
   request: Request,
   context: RouteContext<"/api/settings/users/[id]">,

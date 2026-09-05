@@ -20,3 +20,22 @@ export async function userHasPermission(userId: string, permission: PermissionCo
     (grant) => grant.grantsAll || grant.permissionCode === permission,
   )
 }
+
+export async function userHasAnyPermission(
+  userId: string,
+  permissions: readonly PermissionCode[],
+) {
+  const grants = await db.select({
+    grantsAll: roles.grantsAll,
+    permissionCode: rolePermissions.permissionCode,
+  })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .leftJoin(rolePermissions, eq(roles.id, rolePermissions.roleId))
+    .where(eq(userRoles.userId, userId))
+
+  return grants.some(
+    (grant) => grant.grantsAll ||
+      permissions.some((permission) => grant.permissionCode === permission),
+  )
+}
