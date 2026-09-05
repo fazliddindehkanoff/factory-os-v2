@@ -15,6 +15,7 @@ export async function GET(request: Request) {
   const phone = normalizePhoneNumber(url.searchParams.get("phone") ?? "")
   const requestedLocale = url.searchParams.get("lang") ?? ""
   const locale = isLocale(requestedLocale) ? requestedLocale : defaultLocale
+  const interfaceType = url.searchParams.get("type") === "web-app" ? "web-app" : "dashboard"
 
   if (!phone) return NextResponse.json({ error: "invalid-phone" }, { status: 400 })
 
@@ -35,7 +36,10 @@ export async function GET(request: Request) {
   const origin = host
     ? `${forwardedProtocol || requestUrl.protocol.slice(0, -1)}://${host}`
     : requestUrl.origin
-  const response = NextResponse.redirect(new URL(`/${locale}/telegram/settings`, origin))
+  const destination = interfaceType === "web-app"
+    ? `/${locale}/telegram/orders`
+    : `/${locale}/dashboard`
+  const response = NextResponse.redirect(new URL(destination, origin))
   response.headers.set("Cache-Control", "no-store")
   response.headers.set("Referrer-Policy", "no-referrer")
   return response

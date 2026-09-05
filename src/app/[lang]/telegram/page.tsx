@@ -9,7 +9,8 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
   const query = await searchParams
   const phone = typeof query.phone === "string" ? query.phone.trim() : ""
   if (phone) {
-    const target = new URLSearchParams({ phone, lang })
+    const type = query.type === "web-app" ? "web-app" : "dashboard"
+    const target = new URLSearchParams({ phone, lang, type })
     redirect(`/api/telegram/test-access?${target.toString()}`)
   }
 
