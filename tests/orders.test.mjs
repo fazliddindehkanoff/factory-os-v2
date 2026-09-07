@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   canCreateRequestForApplicant,
+  buildApprovedOrder,
   canUserViewRejectedOrder,
   formatWorkflowNotification,
   getNextWorkflowStep,
@@ -74,6 +75,48 @@ test("warehouse-stage requests follow the configured warehouse responsible user"
   const staleOrder = { currentStep: "warehouse", waitingForUserId: "user-admin" }
   assert.equal(isOrderWaitingForUser(staleOrder, "user-warehouse", "user-warehouse"), true)
   assert.equal(isOrderWaitingForUser(staleOrder, "user-admin", "user-warehouse"), false)
+})
+
+test("department supervisor approval advances and persists the next assignee payload", () => {
+  const order = {
+    id: "order-1",
+    number: "ORD-2026-0001",
+    createdByUserId: "assistant",
+    type: "material",
+    applicantId: "supervisor",
+    departmentIds: ["department"],
+    branchIds: ["branch"],
+    warehouseId: "warehouse",
+    purposeId: "purpose",
+    expectedDate: "2026-09-08",
+    urgency: "normal",
+    lines: [],
+    comment: "",
+    attachmentNames: [],
+    status: "supervisor_review",
+    currentStep: "department_supervisor",
+    waitingForUserId: "supervisor",
+    lastActorUserId: "assistant",
+    createdAt: "2026-09-07T08:00:00.000Z",
+  }
+  const approved = buildApprovedOrder(
+    order,
+    "supervisor",
+    "warehouse-user",
+    false,
+    "2026-09-07T09:00:00.000Z",
+  )
+  assert.equal(approved?.currentStep, "warehouse")
+  assert.equal(approved?.status, "warehouse_check")
+  assert.equal(approved?.waitingForUserId, "warehouse-user")
+  assert.deepEqual(approved?.workflowHistory, [{
+    step: "department_supervisor",
+    action: "approved",
+    actorUserId: "supervisor",
+    createdAt: "2026-09-07T09:00:00.000Z",
+  }])
+  assert.equal(buildApprovedOrder(order, "another-user", "warehouse-user", false), null)
+  assert.equal(buildApprovedOrder(order, "supervisor", undefined, false), null)
 })
 
 test("procured orders move directly from ordering to warehouse receipt", () => {

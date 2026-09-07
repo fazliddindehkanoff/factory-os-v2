@@ -25,6 +25,13 @@ export function getNextWorkflowStep(
   return workflowSteps[index + 1] ?? "complete"
 }
 
+const nonApprovalWorkflowSteps = new Set<WorkflowStep>([
+  "warehouse",
+  "procurement_accept",
+  "sourcing",
+  "price_check",
+])
+
 export function truncateLabel(value: string, maxLength = 40) {
   if (value.length <= maxLength) return value
   if (maxLength <= 1) return "…".slice(0, maxLength)
@@ -205,6 +212,45 @@ export type OrderRecord = {
   lastActorUserId: string
   createdAt: string
   workflowHistory?: WorkflowHistoryEntry[]
+}
+
+export function buildApprovedOrder(
+  order: OrderRecord,
+  actorUserId: string,
+  nextAssigneeUserId: string | undefined,
+  completesOperationalTask: boolean,
+  createdAt = new Date().toISOString(),
+) {
+  if (
+    order.waitingForUserId !== actorUserId ||
+    order.currentStep === "complete" ||
+    nonApprovalWorkflowSteps.has(order.currentStep)
+  ) return null
+
+  const currentStep = order.currentStep
+  const nextStep = getNextWorkflowStep(currentStep)
+  if (nextStep !== "complete" && !nextAssigneeUserId) return null
+
+  return {
+    ...order,
+    currentStep: nextStep,
+    waitingForUserId: nextStep === "complete" ? undefined : nextAssigneeUserId,
+    lastActorUserId: actorUserId,
+    status: nextStep === "complete"
+      ? "approved" as const
+      : nextStep === "warehouse"
+        ? "warehouse_check" as const
+        : "in_progress" as const,
+    workflowHistory: [
+      ...(order.workflowHistory ?? []),
+      {
+        step: currentStep,
+        action: completesOperationalTask ? "completed" as const : "approved" as const,
+        actorUserId,
+        createdAt,
+      },
+    ],
+  } satisfies OrderRecord
 }
 
 export function shouldSkipSupervisorApproval(createdByUserId: string, supervisorUserId?: string) {

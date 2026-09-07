@@ -3,11 +3,10 @@
 import * as React from "react"
 
 import { useSettings } from "@/components/settings/settings-provider"
-import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
+import { approveOrderRecord, createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
   canCreateRequestForApplicant,
   canUserViewRejectedOrder,
-  getNextWorkflowStep,
   normalizeOrderCommentBody,
   resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
@@ -35,7 +34,7 @@ type OrdersContextValue = {
   storageReady: boolean
   addOrder: (order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => Promise<OrderRecord>
   resubmitOrder: (orderId: string, order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => OrderRecord | undefined
-  approveOrder: (orderId: string) => void
+  approveOrder: (orderId: string) => Promise<boolean>
   rejectOrder: (orderId: string) => void
   submitWarehouseReport: (orderId: string, quantities: Record<string, number>) => void
   assignProcurementSpecialist: (orderId: string, specialistUserId: string) => boolean
@@ -402,7 +401,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     return updated
   }
 
-  function approveOrder(orderId: string) {
+  async function approveOrder(orderId: string) {
     const order = orders.find((item) => item.id === orderId)
     const completesOperationalTask =
       (order?.currentStep === "procurement_order" && can("procurement.quote")) ||
@@ -413,24 +412,19 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       order.waitingForUserId !== currentUserId ||
       order.currentStep === "complete" ||
       ["warehouse", "procurement_accept", "sourcing", "price_check"].includes(order.currentStep)
-    ) return
-    const step = getNextWorkflowStep(order.currentStep)
-    const waitingForUserId = step === "complete" ? undefined : assigneeFor(step, order)
-    if (step !== "complete" && !waitingForUserId) return
-    const updated: OrderRecord = {
-      ...order, currentStep: step, waitingForUserId, lastActorUserId: currentUserId,
-      status: step === "complete" ? "approved" : step === "warehouse" ? "warehouse_check" : "in_progress",
-      workflowHistory: appendWorkflowHistory(
-        order,
-        order.currentStep as Exclude<WorkflowStep, "complete">,
-        completesOperationalTask ? "completed" : "approved",
-      ),
+    ) return false
+    let updated: OrderRecord
+    try {
+      updated = await approveOrderRecord<OrderRecord>(orderId)
+    } catch {
+      return false
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
     notify(order.lastActorUserId, updated, { kind: "approved_by", actorName })
     if (order.createdByUserId !== order.lastActorUserId) notify(order.createdByUserId, updated, { kind: "step_approved" })
-    notify(waitingForUserId, updated, { kind: "action_required" })
+    notify(updated.waitingForUserId, updated, { kind: "action_required" })
+    return true
   }
 
   function rejectOrder(orderId: string) {

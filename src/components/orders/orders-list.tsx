@@ -568,9 +568,10 @@ export function OrdersList({
           onOpenChange={(open) => {
             if (!open) setDetailOrderId(null);
           }}
-          onApprove={(id) => {
-            approveOrder(id);
-            setDetailOrderId(null);
+          onApprove={async (id) => {
+            const approved = await approveOrder(id);
+            if (approved) setDetailOrderId(null);
+            return approved;
           }}
           onReject={(id) => {
             rejectOrder(id);
@@ -727,7 +728,7 @@ function OrderDetailsDialog({
   canRevise: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onApprove: (id: string) => void;
+  onApprove: (id: string) => Promise<boolean>;
   onReject: (id: string) => void;
   onWarehouseReport: (id: string, quantities: Record<string, number>) => void;
 }) {
@@ -740,6 +741,8 @@ function OrderDetailsDialog({
   );
   const [downloadingAttachmentId, setDownloadingAttachmentId] = React.useState<string | null>(null);
   const [attachmentError, setAttachmentError] = React.useState("");
+  const [approvalPending, setApprovalPending] = React.useState(false);
+  const [approvalError, setApprovalError] = React.useState("");
   const applicant = data.users.find((user) => user.id === order.applicantId);
   const creator = data.users.find((user) => user.id === order.createdByUserId);
   const waitingFor = data.users.find(
@@ -783,6 +786,16 @@ function OrderDetailsDialog({
       setAttachmentError(messages.attachmentDownloadFailed);
     } finally {
       setDownloadingAttachmentId(null);
+    }
+  }
+
+  async function approve() {
+    setApprovalError("");
+    setApprovalPending(true);
+    try {
+      if (!await onApprove(order.id)) setApprovalError(copy.actionFailed);
+    } finally {
+      setApprovalPending(false);
     }
   }
 
@@ -1012,6 +1025,7 @@ function OrderDetailsDialog({
         ) : null}
 
         <DialogFooter className="sticky -bottom-4 z-10 bg-background/95 backdrop-blur">
+          {approvalError ? <p role="alert" className="mr-auto text-sm text-destructive">{approvalError}</p> : null}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {copy.close}
           </Button>
@@ -1031,8 +1045,9 @@ function OrderDetailsDialog({
                 </Button>
               ) : null}
               {canApprove ? (
-                <Button onClick={() => onApprove(order.id)}>
-                  {isOperationalTask ? copy.completeStep : copy.approve}
+                <Button disabled={approvalPending} onClick={approve}>
+                  {approvalPending ? <LoaderCircleIcon className="animate-spin" /> : null}
+                  {approvalPending ? copy.processing : isOperationalTask ? copy.completeStep : copy.approve}
                 </Button>
               ) : null}
             </>
@@ -1499,6 +1514,8 @@ function workflowCopyBase(lang: Locale) {
       completedOrders: "Завершено",
       fulfilled: "Исполнено со склада",
       fulfilledShort: "со склада",
+      processing: "Сохраняем...",
+      actionFailed: "Не удалось выполнить действие. Обновите страницу и попробуйте ещё раз.",
     };
   if (lang === "tr")
     return {
@@ -1521,6 +1538,8 @@ function workflowCopyBase(lang: Locale) {
       completedOrders: "Tamamlandı",
       fulfilled: "Depodan karşılandı",
       fulfilledShort: "depodan",
+      processing: "Kaydediliyor...",
+      actionFailed: "İşlem tamamlanamadı. Sayfayı yenileyip tekrar deneyin.",
     };
   return {
     queueLabel: "Buyurtma filtri",
@@ -1542,5 +1561,7 @@ function workflowCopyBase(lang: Locale) {
     completedOrders: "Yakunlangan",
     fulfilled: "Ombordan ta’minlandi",
     fulfilledShort: "ombordan",
+    processing: "Saqlanmoqda...",
+    actionFailed: "Amal bajarilmadi. Sahifani yangilab, qayta urinib ko‘ring.",
   };
 }

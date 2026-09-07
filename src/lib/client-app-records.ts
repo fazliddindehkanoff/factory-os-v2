@@ -20,3 +20,13 @@ export async function loadAppRecords<T extends { id: string }>(namespace: string
   if (!response.ok || !result.records) throw new Error("load-failed")
   return result.records
 }
+
+export async function approveOrderRecord<T extends { id: string }>(orderId: string): Promise<T> {
+  const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  })
+  const result = await response.json().catch(() => ({})) as { order?: T; error?: string }
+  if (!response.ok || !result.order) throw new Error(result.error ?? "approval-failed")
+  return result.order
+}
