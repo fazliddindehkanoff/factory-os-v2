@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { desc, eq } from "drizzle-orm"
-import { NextResponse } from "next/server"
+import { after, NextResponse } from "next/server"
 
 import { db } from "@/db/client"
 import { notifications, users } from "@/db/schema"
@@ -131,11 +131,13 @@ export async function POST(request: Request) {
   }).onConflictDoNothing()
 
   if (inserted.rowsAffected > 0 && process.env.TELEGRAM_BOT_TOKEN) {
-    try {
-      await sendTelegramNotificationForUser(userId, orderNumber, bodyText, orderId)
-    } catch {
-      // Keep the saved in-app notification if Telegram is temporarily unavailable.
-    }
+    after(async () => {
+      try {
+        await sendTelegramNotificationForUser(userId, orderNumber, bodyText, orderId)
+      } catch {
+        // Keep the saved in-app notification if Telegram is temporarily unavailable.
+      }
+    })
   }
   return NextResponse.json({ ok: true }, { status: 201 })
 }

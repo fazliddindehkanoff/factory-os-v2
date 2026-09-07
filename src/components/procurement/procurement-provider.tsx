@@ -102,6 +102,9 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
   const can = (permission: PermissionCode) => hasPermission(currentRoles, permission)
+  const canViewSuppliers = can("suppliers.view")
+  const canViewQuotations = can("procurement.view") || can("finance.view")
+  const canViewProcurementCases = can("procurement.view")
 
   React.useEffect(() => {
     try {
@@ -130,9 +133,9 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     if (!currentUserId || !storageReady) return
     let cancelled = false
     void Promise.all([
-      loadAppRecords<SupplierRecord>("suppliers").catch(() => []),
-      loadAppRecords<QuotationRecord>("quotations").catch(() => []),
-      loadAppRecords<ProcurementCase>("procurement-cases").catch(() => []),
+      canViewSuppliers ? loadAppRecords<SupplierRecord>("suppliers").catch(() => []) : Promise.resolve([]),
+      canViewQuotations ? loadAppRecords<QuotationRecord>("quotations").catch(() => []) : Promise.resolve([]),
+      canViewProcurementCases ? loadAppRecords<ProcurementCase>("procurement-cases").catch(() => []) : Promise.resolve([]),
     ]).then(([serverSuppliers, serverQuotations, serverCases]) => {
       if (cancelled) return
       setSuppliers((current) => mergeRecords(current, serverSuppliers))
@@ -140,7 +143,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       setStoredCases((current) => mergeRecords(current, serverCases))
     })
     return () => { cancelled = true }
-  }, [currentUserId, storageReady])
+  }, [canViewProcurementCases, canViewQuotations, canViewSuppliers, currentUserId, storageReady])
 
   const cases = React.useMemo(() => {
     if (!ordersReady || !storageReady) return storedCases

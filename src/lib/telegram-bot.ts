@@ -37,6 +37,7 @@ async function callTelegram(method: string, payload: Record<string, unknown>) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     cache: "no-store",
+    signal: AbortSignal.timeout(8_000),
   })
   const result = await response.json() as { ok?: boolean; description?: string }
   if (!response.ok || !result.ok) throw new Error(result.description || "Telegram API request failed")

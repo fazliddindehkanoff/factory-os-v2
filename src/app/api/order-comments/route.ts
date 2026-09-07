@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { and, asc, eq, inArray } from "drizzle-orm"
-import { NextResponse } from "next/server"
+import { after, NextResponse } from "next/server"
 
 import { db } from "@/db/client"
 import {
@@ -142,15 +142,17 @@ export async function POST(request: Request) {
     })))
 
     if (process.env.TELEGRAM_BOT_TOKEN) {
-      await Promise.allSettled(mentionedUsers.map((user) =>
-        sendTelegramNotificationForUser(
-          user.id,
-          orderNumber,
-          `${author.fullName} sizni izohda belgiladi:\n${preview}`,
-          orderId as string,
-          comment.id,
-        ),
-      ))
+      after(async () => {
+        await Promise.allSettled(mentionedUsers.map((user) =>
+          sendTelegramNotificationForUser(
+            user.id,
+            orderNumber,
+            `${author.fullName} sizni izohda belgiladi:\n${preview}`,
+            orderId as string,
+            comment.id,
+          ),
+        ))
+      })
     }
   }
 
