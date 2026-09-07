@@ -577,9 +577,10 @@ export function OrdersList({
             rejectOrder(id);
             setDetailOrderId(null);
           }}
-          onWarehouseReport={(id, quantities) => {
-            submitWarehouseReport(id, quantities);
-            setDetailOrderId(null);
+          onWarehouseReport={async (id, quantities) => {
+            const submitted = await submitWarehouseReport(id, quantities);
+            if (submitted) setDetailOrderId(null);
+            return submitted;
           }}
         />
       ) : null}
@@ -730,7 +731,7 @@ function OrderDetailsDialog({
   onOpenChange: (open: boolean) => void;
   onApprove: (id: string) => Promise<boolean>;
   onReject: (id: string) => void;
-  onWarehouseReport: (id: string, quantities: Record<string, number>) => void;
+  onWarehouseReport: (id: string, quantities: Record<string, number>) => Promise<boolean>;
 }) {
   const copy = workflowCopy(lang);
   const [quantities, setQuantities] = React.useState<Record<string, number>>(
@@ -794,6 +795,16 @@ function OrderDetailsDialog({
     setApprovalPending(true);
     try {
       if (!await onApprove(order.id)) setApprovalError(copy.actionFailed);
+    } finally {
+      setApprovalPending(false);
+    }
+  }
+
+  async function submitWarehouse() {
+    setApprovalError("");
+    setApprovalPending(true);
+    try {
+      if (!await onWarehouseReport(order.id, quantities)) setApprovalError(copy.actionFailed);
     } finally {
       setApprovalPending(false);
     }
@@ -1053,8 +1064,9 @@ function OrderDetailsDialog({
             </>
           ) : null}
           {isWarehouseAction ? (
-            <Button onClick={() => onWarehouseReport(order.id, quantities)}>
-              {copy.submitReport}
+            <Button disabled={approvalPending} onClick={submitWarehouse}>
+              {approvalPending ? <LoaderCircleIcon className="animate-spin" /> : null}
+              {approvalPending ? copy.processing : copy.submitReport}
             </Button>
           ) : null}
         </DialogFooter>

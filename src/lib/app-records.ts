@@ -18,7 +18,7 @@ type AppRecordPolicy = {
 export const appRecordPolicies: Record<AppRecordNamespace, AppRecordPolicy> = {
   orders: { read: ["requests.view", "requests.view_own"], write: ["requests.create"] },
   suppliers: { read: ["suppliers.view"], write: ["suppliers.manage"] },
-  quotations: { read: ["procurement.view"], write: ["procurement.quote"] },
+  quotations: { read: ["procurement.view", "finance.view"], write: ["procurement.quote"] },
   "procurement-cases": {
     read: ["procurement.view"],
     write: ["procurement.quote", "procurement.select_supplier"],

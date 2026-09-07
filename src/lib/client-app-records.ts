@@ -30,3 +30,18 @@ export async function approveOrderRecord<T extends { id: string }>(orderId: stri
   if (!response.ok || !result.order) throw new Error(result.error ?? "approval-failed")
   return result.order
 }
+
+export async function runOrderWorkflowAction<T extends { id: string }>(
+  orderId: string,
+  action: string,
+  input: Record<string, unknown> = {},
+): Promise<T> {
+  const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/workflow`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...input }),
+  })
+  const result = await response.json().catch(() => ({})) as { order?: T; error?: string }
+  if (!response.ok || !result.order) throw new Error(result.error ?? "workflow-action-failed")
+  return result.order
+}

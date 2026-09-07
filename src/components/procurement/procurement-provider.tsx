@@ -77,11 +77,11 @@ type ProcurementContextValue = {
   updateSupplier: (supplier: SupplierRecord) => void
   archiveSupplier: (id: string) => void
   findSupplierByPhone: (phone: string) => SupplierRecord | undefined
-  assignSpecialist: (procurementCaseId: string, specialistUserId: string) => boolean
+  assignSpecialist: (procurementCaseId: string, specialistUserId: string) => Promise<boolean>
   addQuotation: (quotation: QuotationInput) => Promise<boolean>
-  submitForReview: (procurementCaseId: string) => boolean
-  approveQuotation: (procurementCaseId: string, quotationId: string) => boolean
-  rejectOffers: (procurementCaseId: string, comment: string) => boolean
+  submitForReview: (procurementCaseId: string) => Promise<boolean>
+  approveQuotation: (procurementCaseId: string, quotationId: string) => Promise<boolean>
+  rejectOffers: (procurementCaseId: string, comment: string) => Promise<boolean>
 }
 
 const ProcurementContext = React.createContext<ProcurementContextValue | null>(null)
@@ -172,7 +172,9 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
         orderId: order.id,
         assigneeId: order.procurementSpecialistUserId,
         stage,
-        reviewComment: stage === "changes_requested" ? existing?.reviewComment : undefined,
+        reviewComment: stage === "changes_requested"
+          ? order.procurementReviewComment ?? existing?.reviewComment
+          : undefined,
         updatedAt: existing?.updatedAt ?? order.createdAt,
       }
       if (!existing) next.push(normalized)
@@ -234,10 +236,10 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     })
   }
 
-  function assignSpecialist(procurementCaseId: string, specialistUserId: string) {
+  async function assignSpecialist(procurementCaseId: string, specialistUserId: string) {
     if (!can("procurement.select_supplier")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
-    if (!procurementCase || !assignProcurementSpecialist(procurementCase.orderId, specialistUserId)) return false
+    if (!procurementCase || !await assignProcurementSpecialist(procurementCase.orderId, specialistUserId)) return false
     updateCase(procurementCaseId, {
       assigneeId: specialistUserId,
       stage: procurementCase.stage === "awaiting_assignment"
@@ -319,11 +321,11 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     return true
   }
 
-  function submitForReview(procurementCaseId: string) {
+  async function submitForReview(procurementCaseId: string) {
     if (!can("procurement.quote")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
     const hasOffers = quotations.some((item) => item.procurementCaseId === procurementCaseId)
-    if (!procurementCase || !hasOffers || !submitProcurementOffers(procurementCase.orderId)) return false
+    if (!procurementCase || !hasOffers || !await submitProcurementOffers(procurementCase.orderId)) return false
     updateCase(procurementCaseId, {
       stage: "head_review",
       reviewComment: undefined,
@@ -332,11 +334,11 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     return true
   }
 
-  function approveQuotation(procurementCaseId: string, quotationId: string) {
+  async function approveQuotation(procurementCaseId: string, quotationId: string) {
     if (!can("procurement.select_supplier") || !can("approvals.approve")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
     const quotation = quotations.find((item) => item.id === quotationId && item.procurementCaseId === procurementCaseId)
-    if (!procurementCase || !quotation || !reviewProcurementOffers(procurementCase.orderId, true)) return false
+    if (!procurementCase || !quotation || !await reviewProcurementOffers(procurementCase.orderId, true, "", quotationId)) return false
     setQuotations((current) => current.map((item) => item.procurementCaseId === procurementCaseId
       ? { ...item, selected: item.id === quotationId }
       : item))
@@ -348,11 +350,11 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     return true
   }
 
-  function rejectOffers(procurementCaseId: string, comment: string) {
+  async function rejectOffers(procurementCaseId: string, comment: string) {
     if (!can("procurement.select_supplier") || !can("approvals.reject")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
     const normalizedComment = comment.trim()
-    if (!procurementCase || !normalizedComment || !reviewProcurementOffers(procurementCase.orderId, false, normalizedComment)) return false
+    if (!procurementCase || !normalizedComment || !await reviewProcurementOffers(procurementCase.orderId, false, normalizedComment)) return false
     updateCase(procurementCaseId, {
       stage: "changes_requested",
       reviewComment: normalizedComment,

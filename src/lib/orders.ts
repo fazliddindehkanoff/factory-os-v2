@@ -209,6 +209,7 @@ export type OrderRecord = {
   currentStep: WorkflowStep
   waitingForUserId?: string
   procurementSpecialistUserId?: string
+  procurementReviewComment?: string
   lastActorUserId: string
   createdAt: string
   workflowHistory?: WorkflowHistoryEntry[]

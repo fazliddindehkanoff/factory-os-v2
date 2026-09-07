@@ -103,9 +103,9 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   }
   const procurementCaseId = procurementCase.id
 
-  function handleAssign() {
+  async function handleAssign() {
     setError("")
-    if (!specialistId || !assignSpecialist(procurementCaseId, specialistId)) {
+    if (!specialistId || !await assignSpecialist(procurementCaseId, specialistId)) {
       setError(copy.actionFailed)
     }
   }
@@ -154,23 +154,23 @@ export function OrderProcurementPanel({ order, lang, messages }: {
     setNdsByLine({})
   }
 
-  function handleSubmitReview() {
+  async function handleSubmitReview() {
     setError("")
-    if (!submitForReview(procurementCaseId)) setError(copy.addOfferFirst)
+    if (!await submitForReview(procurementCaseId)) setError(copy.addOfferFirst)
   }
 
-  function handleApprove(quotationId: string) {
+  async function handleApprove(quotationId: string) {
     setError("")
-    if (!approveQuotation(procurementCaseId, quotationId)) setError(copy.actionFailed)
+    if (!await approveQuotation(procurementCaseId, quotationId)) setError(copy.actionFailed)
   }
 
-  function handleReject() {
+  async function handleReject() {
     setError("")
     if (!reviewComment.trim()) {
       setError(copy.commentRequired)
       return
     }
-    if (!rejectOffers(procurementCaseId, reviewComment)) setError(copy.actionFailed)
+    if (!await rejectOffers(procurementCaseId, reviewComment)) setError(copy.actionFailed)
   }
 
   return (
