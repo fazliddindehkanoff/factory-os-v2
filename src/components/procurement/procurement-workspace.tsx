@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Locale, Messages } from "@/lib/i18n"
+import { getProcurementLineAssignments } from "@/lib/orders"
 import type { ProcurementStage } from "@/lib/procurement"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
@@ -134,7 +135,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
   const rows = orders.flatMap((order): ProcurementGridRow[] => {
     const procurementCase = casesByOrderId.get(order.id)
     const applicant = data.users.find((item) => item.id === order.applicantId)
-    const assignee = data.users.find((item) => item.id === procurementCase?.assigneeId)
+    const assignments = getProcurementLineAssignments(order)
     const warehouse = data.warehouses.find((item) => item.id === order.warehouseId)
     const department = order.departmentIds
       .map((id) => data.departments.find((item) => item.id === id))
@@ -147,6 +148,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
 
     return order.lines
       .map((line) => {
+        const assignee = data.users.find((item) => item.id === assignments[line.id])
         const product = data.products.find((item) => item.id === line.productId)
         const unit = data["unit-types"].find(
           (item) => item.id === (line.unitTypeId ?? product?.unitTypeId),

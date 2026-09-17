@@ -122,7 +122,7 @@ export function formatWorkflowNotification(
       warehouse_partial: (fulfilled: number, total: number) =>
         `${total} pozitsiyadan ${fulfilled} tasi ombordan ta’minlandi; qolganlari keyingi bosqichga o‘tdi.`,
       warehouse_report_ready: "Ombor hisoboti tayyor.",
-      procurement_assigned: (actorName: string) => `${actorName} sizga xarid buyurtmasini biriktirdi.`,
+      procurement_assigned: (actorName: string) => `${actorName} sizga xarid pozitsiyalarini biriktirdi.`,
       procurement_offers_submitted: (actorName: string) => `${actorName} tijorat takliflarini tekshiruvga yubordi.`,
       procurement_offer_approved: "Ta’minot rahbari tijorat taklifini tasdiqladi.",
       procurement_offer_rejected: (comment: string) => `Tijorat taklifi qayta ishlash uchun qaytarildi: ${comment}`,
@@ -136,7 +136,7 @@ export function formatWorkflowNotification(
       warehouse_partial: (fulfilled: number, total: number) =>
         `${fulfilled} из ${total} позиций выданы со склада; остальные перешли на следующий этап.`,
       warehouse_report_ready: "Отчёт склада готов.",
-      procurement_assigned: (actorName: string) => `${actorName} назначил(а) вам заявку на закупку.`,
+      procurement_assigned: (actorName: string) => `${actorName} назначил(а) вам позиции для закупки.`,
       procurement_offers_submitted: (actorName: string) => `${actorName} отправил(а) коммерческие предложения на проверку.`,
       procurement_offer_approved: "Руководитель снабжения одобрил коммерческое предложение.",
       procurement_offer_rejected: (comment: string) => `Коммерческое предложение возвращено на доработку: ${comment}`,
@@ -150,7 +150,7 @@ export function formatWorkflowNotification(
       warehouse_partial: (fulfilled: number, total: number) =>
         `${total} kalemin ${fulfilled} tanesi depodan karşılandı; kalanlar sonraki aşamaya geçti.`,
       warehouse_report_ready: "Depo raporu hazır.",
-      procurement_assigned: (actorName: string) => `${actorName} satın alma siparişini size atadı.`,
+      procurement_assigned: (actorName: string) => `${actorName} satın alma kalemlerini size atadı.`,
       procurement_offers_submitted: (actorName: string) => `${actorName} teklifleri incelemeye gönderdi.`,
       procurement_offer_approved: "Satın alma yöneticisi ticari teklifi onayladı.",
       procurement_offer_rejected: (comment: string) => `Ticari teklif yeniden çalışma için iade edildi: ${comment}`,
@@ -209,10 +209,64 @@ export type OrderRecord = {
   currentStep: WorkflowStep
   waitingForUserId?: string
   procurementSpecialistUserId?: string
+  procurementLineAssignments?: Record<string, string>
   procurementReviewComment?: string
   lastActorUserId: string
   createdAt: string
   workflowHistory?: WorkflowHistoryEntry[]
+}
+
+export function getRequiredProcurementLines(
+  order: Pick<OrderRecord, "lines">,
+) {
+  return order.lines.filter((line) => line.fulfillmentStatus === "needs_procurement")
+}
+
+export function getProcurementLineAssignments(
+  order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
+) {
+  const requiredLineIds = new Set(getRequiredProcurementLines(order).map((line) => line.id))
+  const explicitAssignments = Object.entries(order.procurementLineAssignments ?? {})
+    .filter(([lineId, userId]) => requiredLineIds.has(lineId) && Boolean(userId))
+
+  if (explicitAssignments.length > 0) {
+    return Object.fromEntries(explicitAssignments)
+  }
+  if (!order.procurementSpecialistUserId) return {}
+  return Object.fromEntries(
+    [...requiredLineIds].map((lineId) => [lineId, order.procurementSpecialistUserId as string]),
+  )
+}
+
+export function getProcurementSpecialistIds(
+  order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
+) {
+  return [...new Set(Object.values(getProcurementLineAssignments(order)))]
+}
+
+export function getAssignedProcurementLineIds(
+  order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
+  userId?: string,
+) {
+  if (!userId) return []
+  return Object.entries(getProcurementLineAssignments(order))
+    .filter(([, assignedUserId]) => assignedUserId === userId)
+    .map(([lineId]) => lineId)
+}
+
+export function isOrderAssignedToProcurementSpecialist(
+  order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
+  userId?: string,
+) {
+  return getAssignedProcurementLineIds(order, userId).length > 0
+}
+
+export function areAllProcurementLinesAssigned(
+  order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
+) {
+  const requiredLines = getRequiredProcurementLines(order)
+  const assignments = getProcurementLineAssignments(order)
+  return requiredLines.length > 0 && requiredLines.every((line) => Boolean(assignments[line.id]))
 }
 
 export function buildApprovedOrder(
@@ -278,7 +332,10 @@ export function resolveOrderApplicantId(
 }
 
 export function isOrderWaitingForUser(
-  order: Pick<OrderRecord, "currentStep" | "waitingForUserId">,
+  order: Pick<
+    OrderRecord,
+    "currentStep" | "waitingForUserId" | "lines" | "procurementLineAssignments" | "procurementSpecialistUserId"
+  >,
   userId?: string,
   warehouseResponsibleUserId?: string,
 ) {
@@ -288,6 +345,9 @@ export function isOrderWaitingForUser(
     warehouseResponsibleUserId
   ) {
     return warehouseResponsibleUserId === userId
+  }
+  if (order.currentStep === "sourcing") {
+    return isOrderAssignedToProcurementSpecialist(order, userId)
   }
   return order.waitingForUserId === userId
 }

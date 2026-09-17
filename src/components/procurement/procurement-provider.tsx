@@ -6,6 +6,11 @@ import { useOrders } from "@/components/orders/orders-provider"
 import { useSettings } from "@/components/settings/settings-provider"
 import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
+  getAssignedProcurementLineIds,
+  getProcurementSpecialistIds,
+  isOrderAssignedToProcurementSpecialist,
+} from "@/lib/orders"
+import {
   calculateQuotationTotal,
   getRequiredProcurementQuantity,
   isExpectedDeliveryDateAllowed,
@@ -79,7 +84,7 @@ type ProcurementContextValue = {
   updateSupplier: (supplier: SupplierRecord) => void
   archiveSupplier: (id: string) => void
   findSupplierByPhone: (phone: string) => SupplierRecord | undefined
-  assignSpecialist: (procurementCaseId: string, specialistUserId: string) => Promise<boolean>
+  assignSpecialist: (procurementCaseId: string, specialistUserId: string, orderLineIds: string[]) => Promise<boolean>
   addQuotation: (quotation: QuotationInput) => Promise<boolean>
   submitForReview: (procurementCaseId: string) => Promise<boolean>
   approveQuotations: (procurementCaseId: string, quotationIds: string[]) => Promise<boolean>
@@ -175,7 +180,10 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       const normalized: ProcurementCase = {
         id: existing?.id ?? `procurement-${order.id}`,
         orderId: order.id,
-        assigneeId: order.procurementSpecialistUserId,
+        assigneeId: getProcurementSpecialistIds(order).length === 1
+          ? getProcurementSpecialistIds(order)[0]
+          : undefined,
+        assigneeIds: getProcurementSpecialistIds(order),
         stage,
         reviewComment: stage === "changes_requested"
           ? order.procurementReviewComment ?? existing?.reviewComment
@@ -241,15 +249,18 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     })
   }
 
-  async function assignSpecialist(procurementCaseId: string, specialistUserId: string) {
+  async function assignSpecialist(
+    procurementCaseId: string,
+    specialistUserId: string,
+    orderLineIds: string[],
+  ) {
     if (!can("procurement.select_supplier")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
-    if (!procurementCase || !await assignProcurementSpecialist(procurementCase.orderId, specialistUserId)) return false
+    if (
+      !procurementCase ||
+      !await assignProcurementSpecialist(procurementCase.orderId, specialistUserId, orderLineIds)
+    ) return false
     updateCase(procurementCaseId, {
-      assigneeId: specialistUserId,
-      stage: procurementCase.stage === "awaiting_assignment"
-        ? "collecting_offers"
-        : procurementCase.stage,
       reviewComment: procurementCase.reviewComment,
       updatedAt: new Date().toISOString(),
     })
@@ -279,11 +290,15 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       (line) => line.fulfillmentStatus === "needs_procurement",
     ) ?? []
     const requiredLinesById = new Map(requiredLines.map((line) => [line.id, line]))
+    const assignedLineIds = new Set(order
+      ? getAssignedProcurementLineIds(order, currentUserId)
+      : [])
     const submittedLineIds = quotation.lines.map((line) => line.orderLineId)
     if (
       !procurementCase ||
       !supplier ||
-      procurementCase.assigneeId !== currentUserId ||
+      !order ||
+      !isOrderAssignedToProcurementSpecialist(order, currentUserId) ||
       order?.currentStep !== "sourcing" ||
       !quotation.lines.length ||
       new Set(submittedLineIds).size !== submittedLineIds.length ||
@@ -291,6 +306,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
         (line) => {
           const requiredLine = requiredLinesById.get(line.orderLineId)
           return !requiredLine ||
+            !assignedLineIds.has(line.orderLineId) ||
             line.quantity <= 0 ||
             line.quantity > getRequiredProcurementQuantity(requiredLine) ||
             line.unitPrice <= 0 ||

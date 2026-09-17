@@ -21,7 +21,13 @@ import {
   workflowStepInstances,
 } from "@/db/schema"
 import type { Locale } from "@/lib/i18n"
-import type { OrderRecord, OrderStatus } from "@/lib/orders"
+import {
+  getAssignedProcurementLineIds,
+  isOrderAssignedToProcurementSpecialist,
+  isOrderWaitingForUser,
+  type OrderRecord,
+  type OrderStatus,
+} from "@/lib/orders"
 import type { PermissionCode } from "@/lib/rbac"
 
 const localeField = {
@@ -83,7 +89,7 @@ type VisibleOrderRow = {
   createdAt: string
   comment: string
   lines: OrderRecord["lines"]
-  waitingForUserId?: string
+  waitingForMe: boolean
 }
 
 function toTelegramOrderStatus(status: OrderStatus): TelegramOrderStatus {
@@ -144,6 +150,7 @@ export async function getTelegramUserProfile(userId: string, lang: Locale) {
 async function getOrderAccess(userId: string) {
   const grants = await db.select({
     grantsAll: roles.grantsAll,
+    roleCode: roles.code,
     code: rolePermissions.permissionCode,
   })
     .from(userRoles)
@@ -151,9 +158,11 @@ async function getOrderAccess(userId: string) {
     .leftJoin(rolePermissions, eq(roles.id, rolePermissions.roleId))
     .where(eq(userRoles.userId, userId))
   const permissions = new Set(grants.map((grant) => grant.code).filter(Boolean) as PermissionCode[])
+  const roleCodes = new Set(grants.map((grant) => grant.roleCode))
   return {
     canViewAll: grants.some((grant) => grant.grantsAll) || permissions.has("requests.view"),
     canViewOwn: grants.some((grant) => grant.grantsAll) || permissions.has("requests.view_own"),
+    procurementSpecialist: roleCodes.has("procurement_manager") && !roleCodes.has("procurement_head"),
   }
 }
 
@@ -183,6 +192,7 @@ async function getVisibleOrderRows(userId: string, lang: Locale) {
     .map((row) => ({ order: parseStoredOrder(row.payload), ownerId: row.createdByUserId }))
     .filter((row): row is { order: OrderRecord; ownerId: string | null } => Boolean(row.order))
     .filter(({ order, ownerId }) => access.canViewAll || order.applicantId === userId || order.createdByUserId === userId || ownerId === userId)
+    .filter(({ order }) => !access.procurementSpecialist || isOrderAssignedToProcurementSpecialist(order, userId))
 
   const [userRows, departmentRows, warehouseRows, purposeRows] = await Promise.all([
     db.select({ id: users.id, title: users.fullName }).from(users),
@@ -195,7 +205,12 @@ async function getVisibleOrderRows(userId: string, lang: Locale) {
   const warehouseNames = new Map(warehouseRows.map((row) => [row.id, row.title]))
   const purposeNames = new Map(purposeRows.map((row) => [row.id, row.title]))
 
-  return storedOrders.map(({ order }) => ({
+  return storedOrders.map(({ order }) => {
+    const assignedLineIds = new Set(getAssignedProcurementLineIds(order, userId))
+    const visibleLines = access.procurementSpecialist
+      ? order.lines.filter((line) => assignedLineIds.has(line.id))
+      : order.lines
+    return {
     id: order.id,
     number: order.number,
     type: order.type,
@@ -208,9 +223,10 @@ async function getVisibleOrderRows(userId: string, lang: Locale) {
     expectedDate: order.expectedDate,
     createdAt: order.createdAt,
     comment: order.comment,
-    lines: order.lines,
-    waitingForUserId: order.waitingForUserId,
-  } satisfies VisibleOrderRow))
+    lines: visibleLines,
+    waitingForMe: isOrderWaitingForUser(order, userId),
+  } satisfies VisibleOrderRow
+  })
 }
 
 export async function getTelegramOrders(userId: string, lang: Locale, waitingOnly = false) {
@@ -232,7 +248,7 @@ export async function getTelegramOrders(userId: string, lang: Locale, waitingOnl
       expectedDate: row.expectedDate,
       createdAt: row.createdAt,
       itemCount: row.lines.length,
-      waitingForMe: row.waitingForUserId === userId || waitingIds.has(row.id),
+      waitingForMe: row.waitingForMe || waitingIds.has(row.id),
     } satisfies TelegramOrderSummary))
     .filter((order) => !waitingOnly || order.waitingForMe)
 }
@@ -285,7 +301,7 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
     expectedDate: order.expectedDate,
     createdAt: order.createdAt,
     itemCount: lines.length,
-    waitingForMe: order.waitingForUserId === userId || waitingIds.has(order.id),
+    waitingForMe: order.waitingForMe || waitingIds.has(order.id),
     comment: order.comment,
     lines: lines.map((line) => ({ ...line, unit: line.unit ?? "" })),
     comments: comments.map((comment) => ({

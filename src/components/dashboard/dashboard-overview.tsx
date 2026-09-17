@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Locale, Messages } from "@/lib/i18n"
-import { canUserViewRejectedOrder, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
+import { canUserViewRejectedOrder, isOrderAssignedToProcurementSpecialist, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -43,7 +43,7 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
     ? orders.filter((order) =>
         (!ownOnly || order.createdByUserId === currentUser?.id) &&
         (!departmentScoped || order.departmentIds.some((id) => currentUser?.departmentIds.includes(id))) &&
-        (!procurementSpecialistScoped || order.procurementSpecialistUserId === currentUser?.id) &&
+        (!procurementSpecialistScoped || isOrderAssignedToProcurementSpecialist(order, currentUser?.id)) &&
         visibleAfterRejection(order),
       )
     : []

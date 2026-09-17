@@ -12,6 +12,8 @@ import {
 import {
   canCreateRequestForApplicant,
   canUserViewRejectedOrder,
+  getProcurementSpecialistIds,
+  isOrderAssignedToProcurementSpecialist,
   normalizeOrderCommentBody,
   resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
@@ -42,7 +44,11 @@ type OrdersContextValue = {
   approveOrder: (orderId: string) => Promise<boolean>
   rejectOrder: (orderId: string) => void
   submitWarehouseReport: (orderId: string, quantities: Record<string, number>) => Promise<boolean>
-  assignProcurementSpecialist: (orderId: string, specialistUserId: string) => Promise<boolean>
+  assignProcurementSpecialist: (
+    orderId: string,
+    specialistUserId: string,
+    orderLineIds: string[],
+  ) => Promise<boolean>
   submitProcurementOffers: (orderId: string) => Promise<boolean>
   reviewProcurementOffers: (orderId: string, approved: boolean, comment?: string, quotationIds?: string[]) => Promise<boolean>
   addOrderComment: (orderId: string, body: string, replyToId?: string) => boolean
@@ -71,7 +77,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     ) return false
     if (
       currentUser.roleIds.includes("role-procurement_manager") &&
-      order.procurementSpecialistUserId !== currentUser.id
+      !isOrderAssignedToProcurementSpecialist(order, currentUser.id)
     ) return false
     const applicant = data.users.find((user) => user.id === order.applicantId)
     const supervisorUserId = applicant?.roleIds.includes("role-dept_head")
@@ -210,7 +216,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
 
   function assigneeFor(
     step: WorkflowStep,
-    order: Pick<OrderRecord, "applicantId" | "departmentIds" | "warehouseId" | "procurementSpecialistUserId">,
+    order: Pick<
+      OrderRecord,
+      "applicantId" | "departmentIds" | "warehouseId" | "lines" |
+      "procurementSpecialistUserId" | "procurementLineAssignments"
+    >,
   ) {
     if (step === "department_supervisor") {
       const selectedSupervisor = data.users.find(
@@ -228,8 +238,9 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     if (["warehouse", "warehouse_receipt"].includes(step)) {
       return data.warehouses.find((warehouse) => warehouse.id === order.warehouseId)?.responsibleUserId
     }
-    if (["sourcing", "procurement_order"].includes(step) && order.procurementSpecialistUserId) {
-      return order.procurementSpecialistUserId
+    if (["sourcing", "procurement_order"].includes(step)) {
+      const specialistUserId = getProcurementSpecialistIds(order)[0]
+      if (specialistUserId) return specialistUserId
     }
     const roleByStep: Partial<Record<WorkflowStep, string>> = {
       chief_engineer: "role-deputy_director",
@@ -316,6 +327,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       createdByUserId: currentUserId,
       createdAt,
       lastActorUserId: currentUserId,
+      procurementSpecialistUserId: undefined,
+      procurementLineAssignments: undefined,
     }
     const supervisorId = assigneeFor("department_supervisor", base)
     // An assistant can create on behalf of a supervisor, but approval is skipped
@@ -387,6 +400,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       currentStep,
       waitingForUserId: assigneeFor(currentStep, normalizedChanges),
       lastActorUserId: currentUserId,
+      procurementSpecialistUserId: undefined,
+      procurementLineAssignments: undefined,
       lines: normalizedChanges.lines.map((line) => ({
         ...line,
         availableQuantity: undefined,
@@ -490,7 +505,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     return true
   }
 
-  async function assignProcurementSpecialist(orderId: string, specialistUserId: string) {
+  async function assignProcurementSpecialist(
+    orderId: string,
+    specialistUserId: string,
+    orderLineIds: string[],
+  ) {
     const order = orders.find((item) => item.id === orderId)
     const procurementHead = data.users.find((user) => user.id === currentUserId)
     const specialist = data.users.find(
@@ -504,13 +523,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       !can("procurement.select_supplier") ||
       !procurementHead?.roleIds.includes("role-procurement_head") ||
       !specialist ||
-      !["procurement_accept", "sourcing", "price_check"].includes(order.currentStep) ||
+      !["procurement_accept", "sourcing"].includes(order.currentStep) ||
       (order.currentStep === "procurement_accept" && order.waitingForUserId !== currentUserId)
     ) return false
     let updated: OrderRecord
     try {
       updated = await runOrderWorkflowAction<OrderRecord>(orderId, "assign-procurement-specialist", {
         specialistUserId: specialist.id,
+        orderLineIds,
       })
     } catch {
       return false
@@ -527,8 +547,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       !order ||
       !can("procurement.quote") ||
       order.currentStep !== "sourcing" ||
-      order.procurementSpecialistUserId !== currentUserId ||
-      order.waitingForUserId !== currentUserId
+      !isOrderAssignedToProcurementSpecialist(order, currentUserId)
     ) return false
     let updated: OrderRecord
     try {
@@ -563,13 +582,12 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       return false
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
-    notify(
-      order.procurementSpecialistUserId,
-      updated,
-      approved
-        ? { kind: "procurement_offer_approved" }
-        : { kind: "procurement_offer_rejected", comment: comment.trim() },
-    )
+    const event: WorkflowNotificationEvent = approved
+      ? { kind: "procurement_offer_approved" }
+      : { kind: "procurement_offer_rejected", comment: comment.trim() }
+    for (const specialistUserId of getProcurementSpecialistIds(order)) {
+      notify(specialistUserId, updated, event)
+    }
     if (approved) notify(updated.waitingForUserId, updated, { kind: "action_required" })
     return true
   }

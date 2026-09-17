@@ -16,6 +16,7 @@ import { getSessionUser } from "@/lib/auth/session"
 import {
   buildApprovedOrder,
   getNextWorkflowStep,
+  getProcurementSpecialistIds,
   workflowSteps,
   type OrderRecord,
   type WorkflowStep,
@@ -74,7 +75,7 @@ async function resolveAssignee(step: WorkflowStep, order: OrderRecord) {
     return activeUser(warehouse?.userId ?? undefined)
   }
   if (["sourcing", "procurement_order"].includes(step)) {
-    return await activeUser(order.procurementSpecialistUserId) ??
+    return await activeUser(getProcurementSpecialistIds(order)[0]) ??
       firstActiveUserWithRole("procurement_manager")
   }
   const roleByStep: Partial<Record<WorkflowStep, string>> = {

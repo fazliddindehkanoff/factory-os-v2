@@ -6,6 +6,10 @@ import {
   buildApprovedOrder,
   canUserViewRejectedOrder,
   formatWorkflowNotification,
+  areAllProcurementLinesAssigned,
+  getAssignedProcurementLineIds,
+  getProcurementLineAssignments,
+  getProcurementSpecialistIds,
   getNextWorkflowStep,
   isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
@@ -75,6 +79,58 @@ test("warehouse-stage requests follow the configured warehouse responsible user"
   const staleOrder = { currentStep: "warehouse", waitingForUserId: "user-admin" }
   assert.equal(isOrderWaitingForUser(staleOrder, "user-warehouse", "user-warehouse"), true)
   assert.equal(isOrderWaitingForUser(staleOrder, "user-admin", "user-warehouse"), false)
+})
+
+test("legacy procurement assignment applies to every required position", () => {
+  const order = {
+    currentStep: "sourcing",
+    waitingForUserId: "specialist-a",
+    procurementSpecialistUserId: "specialist-a",
+    lines: [
+      { id: "line-a", quantity: 2, fulfillmentStatus: "needs_procurement" },
+      { id: "line-b", quantity: 1, fulfillmentStatus: "fulfilled_from_stock" },
+      { id: "line-c", quantity: 4, fulfillmentStatus: "needs_procurement" },
+    ],
+  }
+  assert.deepEqual(getProcurementLineAssignments(order), {
+    "line-a": "specialist-a",
+    "line-c": "specialist-a",
+  })
+  assert.deepEqual(getAssignedProcurementLineIds(order, "specialist-a"), ["line-a", "line-c"])
+  assert.deepEqual(getProcurementSpecialistIds(order), ["specialist-a"])
+  assert.equal(areAllProcurementLinesAssigned(order), true)
+})
+
+test("procurement positions can be split between specialists", () => {
+  const order = {
+    currentStep: "sourcing",
+    waitingForUserId: "specialist-a",
+    procurementLineAssignments: {
+      "line-a": "specialist-a",
+      "line-b": "specialist-b",
+    },
+    lines: [
+      { id: "line-a", quantity: 2, fulfillmentStatus: "needs_procurement" },
+      { id: "line-b", quantity: 3, fulfillmentStatus: "needs_procurement" },
+    ],
+  }
+  assert.deepEqual(getAssignedProcurementLineIds(order, "specialist-a"), ["line-a"])
+  assert.deepEqual(getAssignedProcurementLineIds(order, "specialist-b"), ["line-b"])
+  assert.equal(isOrderWaitingForUser(order, "specialist-a"), true)
+  assert.equal(isOrderWaitingForUser(order, "specialist-b"), true)
+  assert.equal(isOrderWaitingForUser(order, "specialist-c"), false)
+  assert.equal(areAllProcurementLinesAssigned(order), true)
+})
+
+test("procurement remains incomplete while a required position is unassigned", () => {
+  const order = {
+    procurementLineAssignments: { "line-a": "specialist-a" },
+    lines: [
+      { id: "line-a", quantity: 2, fulfillmentStatus: "needs_procurement" },
+      { id: "line-b", quantity: 3, fulfillmentStatus: "needs_procurement" },
+    ],
+  }
+  assert.equal(areAllProcurementLinesAssigned(order), false)
 })
 
 test("department supervisor approval advances and persists the next assignee payload", () => {

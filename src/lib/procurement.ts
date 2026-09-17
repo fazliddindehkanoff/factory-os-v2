@@ -46,6 +46,7 @@ export type ProcurementCase = {
   id: string
   orderId: string
   assigneeId?: string
+  assigneeIds?: string[]
   stage: ProcurementStage
   reviewComment?: string
   updatedAt: string

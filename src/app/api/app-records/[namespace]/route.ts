@@ -2,7 +2,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 import { db } from "@/db/client"
-import { appRecords } from "@/db/schema"
+import { appRecords, roles, userRoles } from "@/db/schema"
 import { userHasAnyPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import {
@@ -10,6 +10,11 @@ import {
   isAppRecordNamespace,
   parseAppRecord,
 } from "@/lib/app-records"
+import {
+  getAssignedProcurementLineIds,
+  isOrderAssignedToProcurementSpecialist,
+  type OrderRecord,
+} from "@/lib/orders"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -46,7 +51,22 @@ export async function GET(
     .where(and(...conditions))
     .orderBy(desc(appRecords.createdAt))
 
-  return NextResponse.json({ records: rows.map((row) => ({ ...row.payload, id: row.id })) })
+  let records: Record<string, unknown>[] = rows.map((row) => ({ ...row.payload, id: row.id }))
+  if (auth.namespace === "orders") {
+    const assignedRoles = await db.select({ code: roles.code })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(eq(userRoles.userId, auth.session.userId))
+    const roleCodes = new Set(assignedRoles.map((role) => role.code))
+    if (roleCodes.has("procurement_manager") && !roleCodes.has("procurement_head")) {
+      records = records.filter((record) => (
+        Array.isArray(record.lines) &&
+        isOrderAssignedToProcurementSpecialist(record as unknown as OrderRecord, auth.session.userId)
+      ))
+    }
+  }
+
+  return NextResponse.json({ records })
 }
 
 export async function POST(
@@ -60,11 +80,47 @@ export async function POST(
   const parsed = parseAppRecord(await request.json().catch(() => null))
   if (!parsed) return NextResponse.json({ error: "invalid-record" }, { status: 400 })
 
+  let payload = parsed.payload
+  if (auth.namespace === "quotations") {
+    const procurementCaseId = typeof payload.procurementCaseId === "string"
+      ? payload.procurementCaseId
+      : ""
+    const quotationLines = Array.isArray(payload.lines) ? payload.lines : []
+    const orderId = procurementCaseId.startsWith("procurement-")
+      ? procurementCaseId.slice("procurement-".length)
+      : ""
+    const [orderRow] = orderId
+      ? await db.select({ payload: appRecords.payload })
+          .from(appRecords)
+          .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, orderId)))
+          .limit(1)
+      : []
+    const order = orderRow?.payload as OrderRecord | undefined
+    const assignedLineIds = new Set(order
+      ? getAssignedProcurementLineIds(order, auth.session.userId)
+      : [])
+    const submittedLineIds = quotationLines.map((line) => (
+      line && typeof line === "object" && typeof line.orderLineId === "string"
+        ? line.orderLineId
+        : ""
+    ))
+    if (
+      !order ||
+      order.currentStep !== "sourcing" ||
+      !quotationLines.length ||
+      new Set(submittedLineIds).size !== submittedLineIds.length ||
+      submittedLineIds.some((lineId) => !lineId || !assignedLineIds.has(lineId))
+    ) {
+      return NextResponse.json({ error: "quotation-lines-forbidden" }, { status: 403 })
+    }
+    payload = { ...payload, createdByUserId: auth.session.userId }
+  }
+
   try {
     await db.insert(appRecords).values({
       namespace: auth.namespace,
       id: parsed.id,
-      payload: parsed.payload,
+      payload,
       createdByUserId: auth.session.userId,
     })
   } catch (error) {
@@ -75,5 +131,5 @@ export async function POST(
     return NextResponse.json({ error: "create-failed" }, { status: 500 })
   }
 
-  return NextResponse.json({ record: { ...parsed.payload, id: parsed.id } }, { status: 201 })
+  return NextResponse.json({ record: { ...payload, id: parsed.id } }, { status: 201 })
 }

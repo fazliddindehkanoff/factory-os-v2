@@ -11,11 +11,11 @@ import {
   PackageCheckIcon,
   PhoneIcon,
   SendIcon,
-  UserRoundIcon,
   XIcon,
 } from "lucide-react"
 
 import { useAuthorization } from "@/components/auth/use-authorization"
+import { ProcurementLineAssignment } from "@/components/orders/procurement-line-assignment"
 import { useProcurement } from "@/components/procurement/procurement-provider"
 import { useSettings } from "@/components/settings/settings-provider"
 import { Badge } from "@/components/ui/badge"
@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
-import type { OrderRecord } from "@/lib/orders"
+import { getAssignedProcurementLineIds, type OrderRecord } from "@/lib/orders"
 import { getLocalDateInputValue, getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed, normalizeSupplierPhone, quotationLinesCoverRequirements, type ProcurementStage, type QuotationRecord } from "@/lib/procurement"
 import { getLocalizedTitle } from "@/lib/settings"
 
@@ -40,7 +40,6 @@ export function OrderProcurementPanel({ order, lang, messages }: {
     cases,
     quotations,
     findSupplierByPhone,
-    assignSpecialist,
     addQuotation,
     submitForReview,
     approveQuotations,
@@ -61,22 +60,13 @@ export function OrderProcurementPanel({ order, lang, messages }: {
     "complete",
   ].includes(order.currentStep)
   const approvedQuotations = caseQuotes.filter((quotation) => quotation.selected)
-  const isAssignedSpecialist = currentUser?.id === procurementCase?.assigneeId
+  const assignedLineIds = new Set(getAssignedProcurementLineIds(order, currentUser?.id))
+  const offerableLines = requiredLines.filter((line) => assignedLineIds.has(line.id))
+  const isAssignedSpecialist = assignedLineIds.size > 0
   const canAssignSpecialist = isHead && can("procurement.select_supplier")
   const canEnterOffers = isAssignedSpecialist && can("procurement.quote")
   const canApproveOffer = isHead && can("procurement.select_supplier") && can("approvals.approve")
   const canRejectOffers = isHead && can("procurement.select_supplier") && can("approvals.reject")
-  const specialists = data.users.filter(
-    (user) =>
-      user.roleIds.includes("role-procurement_manager") &&
-      user.departmentIds.some((id) => currentUser?.departmentIds.includes(id)),
-  )
-  const workloadFor = (userId: string) => cases.filter(
-    (item) => item.assigneeId === userId && item.stage !== "approved",
-  ).length
-  const [specialistId, setSpecialistId] = React.useState(
-    procurementCase?.assigneeId ?? specialists[0]?.id ?? "",
-  )
   const [supplierPhone, setSupplierPhone] = React.useState("")
   const [newSupplierName, setNewSupplierName] = React.useState("")
   const [selectedLineIds, setSelectedLineIds] = React.useState<string[]>([])
@@ -88,10 +78,8 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   const [reviewComment, setReviewComment] = React.useState("")
   const [error, setError] = React.useState("")
   const matchedSupplier = findSupplierByPhone(supplierPhone)
-  const selectedSpecialist = specialists.find((specialist) => specialist.id === specialistId)
-  const selectedSpecialistWorkload = selectedSpecialist ? workloadFor(selectedSpecialist.id) : 0
   const today = getLocalDateInputValue()
-  const draftTotal = requiredLines.reduce((total, line) => {
+  const draftTotal = offerableLines.reduce((total, line) => {
     if (!selectedLineIds.includes(line.id)) return total
     return total + (Number(quantities[line.id]) || 0) * (Number(unitPrices[line.id]) || 0)
   }, 0)
@@ -99,6 +87,9 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   const quotedLines = caseQuotes.flatMap((quotation) => quotation.lines)
   const coveredLineCount = requiredLines.filter((line) => quotationLinesCoverRequirements([line], quotedLines)).length
   const selectedExpense = approvedQuotations.reduce((total, quotation) => total + quotation.amount, 0)
+  const visibleCaseQuotes = isHead || directorCanReviewCosts
+    ? caseQuotes
+    : caseQuotes.filter((quotation) => quotation.createdByUserId === currentUser?.id)
 
   if (!can("procurement.view") && !directorCanReviewCosts) return null
 
@@ -111,13 +102,6 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   }
   const procurementCaseId = procurementCase.id
 
-  async function handleAssign() {
-    setError("")
-    if (!specialistId || !await assignSpecialist(procurementCaseId, specialistId)) {
-      setError(copy.actionFailed)
-    }
-  }
-
   function handlePhoneChange(phone: string) {
     setSupplierPhone(phone)
     if (!findSupplierByPhone(phone)) setNewSupplierName("")
@@ -125,7 +109,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
 
   async function handleAddOffer() {
     setError("")
-    const lines = requiredLines.filter((line) => selectedLineIds.includes(line.id)).map((line) => ({
+    const lines = offerableLines.filter((line) => selectedLineIds.includes(line.id)).map((line) => ({
       orderLineId: line.id,
       quantity: Number(quantities[line.id]),
       unitPrice: Number(unitPrices[line.id]),
@@ -141,7 +125,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
       (!matchedSupplier && !newSupplierName.trim()) ||
       !lines.length ||
       lines.some((line) => {
-        const requiredLine = requiredLines.find((item) => item.id === line.orderLineId)
+        const requiredLine = offerableLines.find((item) => item.id === line.orderLineId)
         return !requiredLine ||
           line.quantity <= 0 ||
           line.quantity > getRequiredProcurementQuantity(requiredLine) ||
@@ -191,7 +175,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
       ? [...new Set([...current, lineId])]
       : current.filter((id) => id !== lineId))
     if (checked) {
-      const line = requiredLines.find((item) => item.id === lineId)
+      const line = offerableLines.find((item) => item.id === lineId)
       if (line) setQuantities((current) => ({
         ...current,
         [lineId]: current[lineId] ?? String(getRequiredProcurementQuantity(line)),
@@ -240,29 +224,16 @@ export function OrderProcurementPanel({ order, lang, messages }: {
         </div>
       ) : null}
 
-      {canAssignSpecialist && ["procurement_accept", "sourcing", "price_check"].includes(order.currentStep) ? (
-        <div className="space-y-3 rounded-lg border bg-background p-3">
-          <h4 className="flex items-center gap-2 text-sm font-semibold"><UserRoundIcon className="size-4" />{procurementCase.assigneeId ? copy.editSpecialist : copy.assignSpecialist}</h4>
-          <FormField label={messages.procurementSpecialist} htmlFor="order-procurement-specialist">
-            <select id="order-procurement-specialist" value={specialistId} onChange={(event) => setSpecialistId(event.target.value)} className={selectClassName}>
-              {specialists.map((specialist) => {
-                const workload = workloadFor(specialist.id)
-                return <option key={specialist.id} value={specialist.id}>{specialist.fullName} — {specialistStatusLabel(workload, copy)}</option>
-              })}
-            </select>
-          </FormField>
-          {selectedSpecialist ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm" role="status">
-              <span className="font-medium">{selectedSpecialist.fullName}</span>
-              <Badge variant={selectedSpecialistWorkload ? "secondary" : "outline"}>{specialistStatusLabel(selectedSpecialistWorkload, copy)}</Badge>
-            </div>
-          ) : null}
-          <Button onClick={handleAssign} disabled={!specialistId || specialistId === procurementCase.assigneeId}><UserRoundIcon />{procurementCase.assigneeId ? copy.updateAssignment : copy.assign}</Button>
-        </div>
+      {canAssignSpecialist && ["procurement_accept", "sourcing"].includes(order.currentStep) ? (
+        <ProcurementLineAssignment
+          order={order}
+          procurementCaseId={procurementCaseId}
+          lang={lang}
+        />
       ) : null}
 
       <OfferList
-        quotations={caseQuotes}
+        quotations={visibleCaseQuotes}
         order={order}
         lang={lang}
         messages={messages}
@@ -323,27 +294,27 @@ export function OrderProcurementPanel({ order, lang, messages }: {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-medium">{copy.selectPositions}</p>
               <div className="flex items-center gap-2">
-                <Badge variant="outline">{copy.selectedPositions(selectedLineIds.length, requiredLines.length)}</Badge>
+                <Badge variant="outline">{copy.selectedPositions(selectedLineIds.length, offerableLines.length)}</Badge>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    const selectAll = selectedLineIds.length !== requiredLines.length
-                    const nextIds = selectAll ? requiredLines.map((line) => line.id) : []
+                    const selectAll = selectedLineIds.length !== offerableLines.length
+                    const nextIds = selectAll ? offerableLines.map((line) => line.id) : []
                     setSelectedLineIds(nextIds)
-                    if (selectAll) setQuantities((current) => Object.fromEntries(requiredLines.map((line) => [
+                    if (selectAll) setQuantities((current) => Object.fromEntries(offerableLines.map((line) => [
                       line.id,
                       current[line.id] ?? String(getRequiredProcurementQuantity(line)),
                     ])))
                   }}
                 >
-                  {selectedLineIds.length === requiredLines.length ? copy.clearSelection : copy.selectAll}
+                  {selectedLineIds.length === offerableLines.length ? copy.clearSelection : copy.selectAll}
                 </Button>
               </div>
             </div>
             <p className="text-xs text-muted-foreground">{copy.positionSelectionHint}</p>
-            {requiredLines.map((line, index) => {
+            {offerableLines.map((line, index) => {
               const product = data.products.find((item) => item.id === line.productId)
               const unit = data["unit-types"].find((item) => item.id === line.unitTypeId)
               const remaining = getRequiredProcurementQuantity(line)
@@ -515,10 +486,6 @@ function StageBadge({ stage, copy }: { stage: ProcurementStage; copy: ReturnType
   return <Badge variant={variant}>{copy.stages[stage]}</Badge>
 }
 
-function specialistStatusLabel(workload: number, copy: ReturnType<typeof procurementOrderCopy>) {
-  return workload ? copy.activeAssignments(workload) : copy.available
-}
-
 function formatMoney(value: number, lang: Locale) {
   const locale = lang === "ru" ? "ru-RU" : lang === "tr" ? "tr-TR" : "uz-UZ"
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value)} UZS`
@@ -530,8 +497,6 @@ function formatDeliveryDate(value: string, lang: Locale) {
   const locale = lang === "ru" ? "ru-RU" : lang === "tr" ? "tr-TR" : "uz-UZ"
   return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(date)
 }
-
-const selectClassName = "min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 
 function procurementOrderCopy(lang: Locale) {
   if (lang === "ru") return {

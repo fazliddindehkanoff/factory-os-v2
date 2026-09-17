@@ -14,7 +14,15 @@ import {
 } from "@/db/schema"
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
-import { type OrderRecord, type WorkflowHistoryEntry } from "@/lib/orders"
+import {
+  areAllProcurementLinesAssigned,
+  getProcurementLineAssignments,
+  getProcurementSpecialistIds,
+  getRequiredProcurementLines,
+  isOrderAssignedToProcurementSpecialist,
+  type OrderRecord,
+  type WorkflowHistoryEntry,
+} from "@/lib/orders"
 import { quotationLinesCoverRequirements, type QuotationRecord } from "@/lib/procurement"
 
 export const runtime = "nodejs"
@@ -208,35 +216,65 @@ export async function POST(
     metadata = { ...metadata, toStep: updated.currentStep, fullyFulfilled }
   } else if (action === "assign-procurement-specialist") {
     const specialistUserId = typeof body?.specialistUserId === "string" ? body.specialistUserId : ""
+    const orderLineIds = Array.isArray(body?.orderLineIds)
+      ? [...new Set(body.orderLineIds.filter(
+          (value): value is string => typeof value === "string" && value.length > 0 && value.length <= 200,
+        ))]
+      : []
+    const requiredLineIds = new Set(getRequiredProcurementLines(order).map((line) => line.id))
     const validSpecialist =
       await activeUser(specialistUserId) &&
       await hasRole(specialistUserId, "procurement_manager") &&
       await shareDepartment(session.userId, specialistUserId)
     if (
       !specialistUserId ||
+      !orderLineIds.length ||
+      orderLineIds.some((lineId) => !requiredLineIds.has(lineId)) ||
       !validSpecialist ||
-      order.currentStep !== "procurement_accept" ||
-      order.waitingForUserId !== session.userId ||
+      !["procurement_accept", "sourcing"].includes(order.currentStep) ||
+      (order.currentStep === "procurement_accept" && order.waitingForUserId !== session.userId) ||
       !await hasRole(session.userId, "procurement_head") ||
       !await userHasPermission(session.userId, "procurement.select_supplier")
     ) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+
+    const assignments = {
+      ...getProcurementLineAssignments(order),
+      ...Object.fromEntries(orderLineIds.map((lineId) => [lineId, specialistUserId])),
+    }
+    const specialistIds = [...new Set(Object.values(assignments))]
+    const allAssigned = areAllProcurementLinesAssigned({
+      ...order,
+      procurementSpecialistUserId: undefined,
+      procurementLineAssignments: assignments,
+    })
+    const wasAwaitingAssignment = order.currentStep === "procurement_accept"
     updated = {
       ...order,
-      procurementSpecialistUserId: specialistUserId,
+      procurementSpecialistUserId: allAssigned && specialistIds.length === 1
+        ? specialistIds[0]
+        : undefined,
+      procurementLineAssignments: assignments,
       procurementReviewComment: undefined,
-      currentStep: "sourcing",
-      waitingForUserId: specialistUserId,
+      currentStep: allAssigned ? "sourcing" : "procurement_accept",
+      waitingForUserId: allAssigned ? specialistIds[0] : session.userId,
       lastActorUserId: session.userId,
       status: "in_progress",
-      workflowHistory: appendHistory(order, "procurement_accept", "completed", session.userId, now),
+      workflowHistory: wasAwaitingAssignment && allAssigned
+        ? appendHistory(order, "procurement_accept", "completed", session.userId, now)
+        : order.workflowHistory,
     }
     auditAction = "order.procurement_assigned"
-    metadata = { ...metadata, toStep: updated.currentStep, specialistUserId }
+    metadata = {
+      ...metadata,
+      toStep: updated.currentStep,
+      specialistUserId,
+      orderLineIds,
+      allAssigned,
+    }
   } else if (action === "submit-procurement-offers") {
     if (
       order.currentStep !== "sourcing" ||
-      order.waitingForUserId !== session.userId ||
-      order.procurementSpecialistUserId !== session.userId ||
+      !isOrderAssignedToProcurementSpecialist(order, session.userId) ||
       !await userHasPermission(session.userId, "procurement.quote")
     ) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const quotationRows = await db.select({ payload: appRecords.payload }).from(appRecords)
@@ -281,7 +319,7 @@ export async function POST(
     ) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const nextAssignee = approved
       ? await firstUserWithRole("director")
-      : await activeUser(order.procurementSpecialistUserId)
+      : await activeUser(getProcurementSpecialistIds(order)[0])
     if (!nextAssignee) return NextResponse.json({ error: "next-assignee-missing" }, { status: 409 })
     const quotationRows = await db.select({ id: appRecords.id, payload: appRecords.payload })
       .from(appRecords)

@@ -48,8 +48,11 @@ import type { Locale, Messages } from "@/lib/i18n";
 import { downloadOrderAttachment } from "@/lib/order-attachments";
 import {
   canUserViewRejectedOrder,
+  getAssignedProcurementLineIds,
+  getProcurementSpecialistIds,
   isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
+  isOrderAssignedToProcurementSpecialist,
   workflowSteps,
   type OrderRecord,
   type OrderStatus,
@@ -150,7 +153,7 @@ export function OrdersList({
       (!waitingOnly || waitingForCurrentUser(order)) &&
       (!ownOnly || order.createdByUserId === currentUser?.id) &&
       (!departmentScoped || order.departmentIds.some((id) => currentUser?.departmentIds.includes(id))) &&
-      (!procurementSpecialistScoped || order.procurementSpecialistUserId === currentUser?.id) &&
+      (!procurementSpecialistScoped || isOrderAssignedToProcurementSpecialist(order, currentUser?.id)) &&
       visibleAfterRejection(order) &&
       (!normalizedQuery || searchText.includes(normalizedQuery)) &&
       (!filters.type || order.type === filters.type) &&
@@ -466,6 +469,7 @@ export function OrdersList({
                 onToggle={toggleOrder}
                 onOpen={() => setDetailOrderId(order.id)}
                 data={data}
+                currentUserId={currentUser?.id}
               />
             ))
           )}
@@ -623,6 +627,7 @@ function OrderRow({
   onToggle,
   onOpen,
   data,
+  currentUserId,
 }: {
   order: OrderRecord;
   lang: Locale;
@@ -631,6 +636,7 @@ function OrderRow({
   onToggle: (id: string, checked: boolean) => void;
   onOpen: () => void;
   data: ReturnType<typeof useSettings>["data"];
+  currentUserId?: string;
 }) {
   const applicant = data.users.find((user) => user.id === order.applicantId);
   const warehouse = data.warehouses.find(
@@ -644,6 +650,10 @@ function OrderRow({
   const fulfilledLines = order.lines.filter(
     (line) => line.fulfillmentStatus === "fulfilled_from_stock",
   ).length;
+  const displayedLineCount = currentUserId && data.users.find((user) => user.id === currentUserId)
+    ?.roleIds.includes("role-procurement_manager")
+    ? getAssignedProcurementLineIds(order, currentUserId).length
+    : order.lines.length;
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
@@ -679,7 +689,7 @@ function OrderRow({
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-1">
-          <span>{order.lines.length}</span>
+          <span>{displayedLineCount}</span>
           {fulfilledLines ? (
             <Badge
               variant="outline"
@@ -733,6 +743,7 @@ function OrderDetailsDialog({
   onReject: (id: string) => void;
   onWarehouseReport: (id: string, quantities: Record<string, number>) => Promise<boolean>;
 }) {
+  const { currentUser } = useAuthorization();
   const copy = workflowCopy(lang);
   const [quantities, setQuantities] = React.useState<Record<string, number>>(
     () =>
@@ -775,6 +786,10 @@ function OrderDetailsDialog({
     "procurement_order",
     "warehouse_receipt",
   ].includes(order.currentStep);
+  const assignedLineIds = new Set(getAssignedProcurementLineIds(order, currentUser?.id));
+  const visibleLines = currentUser?.roleIds.includes("role-procurement_manager")
+    ? order.lines.filter((line) => assignedLineIds.has(line.id))
+    : order.lines;
 
   async function downloadAttachment(attachment: NonNullable<OrderRecord["attachments"]>[number]) {
     setAttachmentError("");
@@ -882,7 +897,7 @@ function OrderDetailsDialog({
               {messages.orderPositions}
             </h3>
             <span className="text-xs text-muted-foreground">
-              {order.lines.length} {messages.positionsCount.toLocaleLowerCase()}
+              {visibleLines.length} {messages.positionsCount.toLocaleLowerCase()}
             </span>
           </div>
           <div className="min-w-0 overflow-hidden rounded-xl border">
@@ -899,7 +914,7 @@ function OrderDetailsDialog({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {order.lines.map((line, index) => {
+                {visibleLines.map((line, index) => {
                   const product = data.products.find(
                     (item) => item.id === line.productId,
                   );
@@ -1205,7 +1220,11 @@ function WorkflowTimeline({
 
 function workflowAssignee(
   step: Exclude<OrderRecord["currentStep"], "complete">,
-  order: Pick<OrderRecord, "departmentIds" | "warehouseId" | "procurementSpecialistUserId">,
+  order: Pick<
+    OrderRecord,
+    "departmentIds" | "warehouseId" | "lines" |
+    "procurementSpecialistUserId" | "procurementLineAssignments"
+  >,
   data: ReturnType<typeof useSettings>["data"],
 ) {
   if (step === "department_supervisor") {
@@ -1221,8 +1240,9 @@ function workflowAssignee(
     )?.responsibleUserId;
     return data.users.find((user) => user.id === responsibleId);
   }
-  if (["sourcing", "procurement_order"].includes(step) && order.procurementSpecialistUserId) {
-    return data.users.find((user) => user.id === order.procurementSpecialistUserId);
+  if (["sourcing", "procurement_order"].includes(step)) {
+    const specialistUserId = getProcurementSpecialistIds(order)[0];
+    if (specialistUserId) return data.users.find((user) => user.id === specialistUserId);
   }
   const roleByStep: Partial<
     Record<Exclude<OrderRecord["currentStep"], "complete">, string>
