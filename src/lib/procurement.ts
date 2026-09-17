@@ -57,6 +57,45 @@ export function calculateQuotationTotal(
   return lines.reduce((total, line) => total + line.quantity * line.unitPrice, 0)
 }
 
+type RequiredProcurementLine = {
+  id: string
+  quantity: number
+  availableQuantity?: number
+}
+
+export function getRequiredProcurementQuantity(line: RequiredProcurementLine) {
+  return Math.max(0, line.quantity - (line.availableQuantity ?? 0))
+}
+
+export function quotationLinesCoverRequirements(
+  requiredLines: readonly RequiredProcurementLine[],
+  quotationLines: readonly Pick<QuotationLineRecord, "orderLineId" | "quantity">[],
+  mode: "at-least" | "exact" = "at-least",
+) {
+  const requirements = new Map(requiredLines.map((line) => [
+    line.id,
+    getRequiredProcurementQuantity(line),
+  ]))
+  const coverage = new Map<string, number>()
+  for (const line of quotationLines) {
+    const required = requirements.get(line.orderLineId)
+    if (
+      required === undefined ||
+      !Number.isFinite(line.quantity) ||
+      line.quantity <= 0 ||
+      line.quantity > required
+    ) return false
+    coverage.set(line.orderLineId, (coverage.get(line.orderLineId) ?? 0) + line.quantity)
+  }
+  return requiredLines.every((line) => {
+    const required = getRequiredProcurementQuantity(line)
+    const quoted = coverage.get(line.id) ?? 0
+    return mode === "exact"
+      ? Math.abs(quoted - required) < 0.000_001
+      : quoted + 0.000_001 >= required
+  })
+}
+
 export function getLocalDateInputValue(date = new Date()) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")

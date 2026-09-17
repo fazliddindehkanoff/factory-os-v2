@@ -7,8 +7,10 @@ import { useSettings } from "@/components/settings/settings-provider"
 import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
   calculateQuotationTotal,
+  getRequiredProcurementQuantity,
   isExpectedDeliveryDateAllowed,
   normalizeSupplierPhone,
+  quotationLinesCoverRequirements,
   supplierPhoneMatches,
   type ProcurementCase,
   type QuotationRecord,
@@ -80,7 +82,7 @@ type ProcurementContextValue = {
   assignSpecialist: (procurementCaseId: string, specialistUserId: string) => Promise<boolean>
   addQuotation: (quotation: QuotationInput) => Promise<boolean>
   submitForReview: (procurementCaseId: string) => Promise<boolean>
-  approveQuotation: (procurementCaseId: string, quotationId: string) => Promise<boolean>
+  approveQuotations: (procurementCaseId: string, quotationIds: string[]) => Promise<boolean>
   rejectOffers: (procurementCaseId: string, comment: string) => Promise<boolean>
 }
 
@@ -276,28 +278,27 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     const requiredLines = order?.lines.filter(
       (line) => line.fulfillmentStatus === "needs_procurement",
     ) ?? []
-    const requiredLineIds = requiredLines.map((line) => line.id)
+    const requiredLinesById = new Map(requiredLines.map((line) => [line.id, line]))
+    const submittedLineIds = quotation.lines.map((line) => line.orderLineId)
     if (
       !procurementCase ||
       !supplier ||
       procurementCase.assigneeId !== currentUserId ||
       order?.currentStep !== "sourcing" ||
-      requiredLineIds.length !== quotation.lines.length ||
-      !requiredLineIds.every((id) => quotation.lines.some((line) => line.orderLineId === id)) ||
+      !quotation.lines.length ||
+      new Set(submittedLineIds).size !== submittedLineIds.length ||
       quotation.lines.some(
-        (line) =>
-          line.quantity <= 0 ||
-          line.unitPrice <= 0 ||
-          !isExpectedDeliveryDateAllowed(line.expectedDeliveryDate),
+        (line) => {
+          const requiredLine = requiredLinesById.get(line.orderLineId)
+          return !requiredLine ||
+            line.quantity <= 0 ||
+            line.quantity > getRequiredProcurementQuantity(requiredLine) ||
+            line.unitPrice <= 0 ||
+            !isExpectedDeliveryDateAllowed(line.expectedDeliveryDate)
+        },
       )
     ) return false
-    const normalizedLines = requiredLines.map((line) => ({
-      orderLineId: line.id,
-      quantity: Math.max(0, line.quantity - (line.availableQuantity ?? 0)),
-      unitPrice: quotation.lines.find((item) => item.orderLineId === line.id)?.unitPrice ?? 0,
-      expectedDeliveryDate: quotation.lines.find((item) => item.orderLineId === line.id)?.expectedDeliveryDate ?? "",
-      ndsIncluded: quotation.lines.find((item) => item.orderLineId === line.id)?.ndsIncluded ?? false,
-    }))
+    const normalizedLines = quotation.lines.map((line) => ({ ...line }))
     const record: QuotationRecord = {
       procurementCaseId: quotation.procurementCaseId,
       lines: normalizedLines,
@@ -327,8 +328,17 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   async function submitForReview(procurementCaseId: string) {
     if (!can("procurement.quote")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
-    const hasOffers = quotations.some((item) => item.procurementCaseId === procurementCaseId)
-    if (!procurementCase || !hasOffers || !await submitProcurementOffers(procurementCase.orderId)) return false
+    const order = orders.find((item) => item.id === procurementCase?.orderId)
+    const requiredLines = order?.lines.filter((line) => line.fulfillmentStatus === "needs_procurement") ?? []
+    const quotationLines = quotations
+      .filter((item) => item.procurementCaseId === procurementCaseId)
+      .flatMap((item) => item.lines)
+    if (
+      !procurementCase ||
+      !order ||
+      !quotationLinesCoverRequirements(requiredLines, quotationLines) ||
+      !await submitProcurementOffers(procurementCase.orderId)
+    ) return false
     updateCase(procurementCaseId, {
       stage: "head_review",
       reviewComment: undefined,
@@ -337,13 +347,26 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     return true
   }
 
-  async function approveQuotation(procurementCaseId: string, quotationId: string) {
+  async function approveQuotations(procurementCaseId: string, quotationIds: string[]) {
     if (!can("procurement.select_supplier") || !can("approvals.approve")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
-    const quotation = quotations.find((item) => item.id === quotationId && item.procurementCaseId === procurementCaseId)
-    if (!procurementCase || !quotation || !await reviewProcurementOffers(procurementCase.orderId, true, "", quotationId)) return false
+    const order = orders.find((item) => item.id === procurementCase?.orderId)
+    const selectedIds = [...new Set(quotationIds)]
+    const selectedQuotations = quotations.filter(
+      (item) => item.procurementCaseId === procurementCaseId && selectedIds.includes(item.id),
+    )
+    const requiredLines = order?.lines.filter((line) => line.fulfillmentStatus === "needs_procurement") ?? []
+    if (
+      !procurementCase ||
+      !order ||
+      !selectedIds.length ||
+      selectedQuotations.length !== selectedIds.length ||
+      !quotationLinesCoverRequirements(requiredLines, selectedQuotations.flatMap((item) => item.lines), "exact") ||
+      !await reviewProcurementOffers(procurementCase.orderId, true, "", selectedIds)
+    ) return false
+    const selectedIdSet = new Set(selectedIds)
     setQuotations((current) => current.map((item) => item.procurementCaseId === procurementCaseId
-      ? { ...item, selected: item.id === quotationId }
+      ? { ...item, selected: selectedIdSet.has(item.id) }
       : item))
     updateCase(procurementCaseId, {
       stage: "approved",
@@ -396,7 +419,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       assignSpecialist,
       addQuotation,
       submitForReview,
-      approveQuotation,
+      approveQuotations,
       rejectOffers,
     }}>
       {children}

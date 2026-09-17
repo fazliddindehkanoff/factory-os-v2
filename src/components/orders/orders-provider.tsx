@@ -44,7 +44,7 @@ type OrdersContextValue = {
   submitWarehouseReport: (orderId: string, quantities: Record<string, number>) => Promise<boolean>
   assignProcurementSpecialist: (orderId: string, specialistUserId: string) => Promise<boolean>
   submitProcurementOffers: (orderId: string) => Promise<boolean>
-  reviewProcurementOffers: (orderId: string, approved: boolean, comment?: string, quotationId?: string) => Promise<boolean>
+  reviewProcurementOffers: (orderId: string, approved: boolean, comment?: string, quotationIds?: string[]) => Promise<boolean>
   addOrderComment: (orderId: string, body: string, replyToId?: string) => boolean
   markNotificationsRead: () => void
   deleteOrders: (ids: string[]) => void
@@ -542,7 +542,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     return true
   }
 
-  async function reviewProcurementOffers(orderId: string, approved: boolean, comment = "", quotationId = "") {
+  async function reviewProcurementOffers(orderId: string, approved: boolean, comment = "", quotationIds: string[] = []) {
     const order = orders.find((item) => item.id === orderId)
     if (
       !order ||
@@ -557,7 +557,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       updated = await runOrderWorkflowAction<OrderRecord>(orderId, "review-procurement-offers", {
         approved,
         comment,
-        quotationId,
+        quotationIds,
       })
     } catch {
       return false

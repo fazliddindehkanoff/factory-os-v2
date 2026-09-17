@@ -15,6 +15,7 @@ import {
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import { type OrderRecord, type WorkflowHistoryEntry } from "@/lib/orders"
+import { quotationLinesCoverRequirements, type QuotationRecord } from "@/lib/procurement"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -139,6 +140,17 @@ function numberMap(value: unknown) {
   return result
 }
 
+function parseQuotation(value: unknown): QuotationRecord | null {
+  if (!value || typeof value !== "object") return null
+  const quotation = value as Partial<QuotationRecord>
+  if (
+    typeof quotation.id !== "string" ||
+    typeof quotation.procurementCaseId !== "string" ||
+    !Array.isArray(quotation.lines)
+  ) return null
+  return quotation as QuotationRecord
+}
+
 export async function POST(
   request: Request,
   context: RouteContext<"/api/orders/[id]/workflow">,
@@ -229,8 +241,15 @@ export async function POST(
     ) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const quotationRows = await db.select({ payload: appRecords.payload }).from(appRecords)
       .where(eq(appRecords.namespace, "quotations"))
-    const hasOffer = quotationRows.some((item) => item.payload.procurementCaseId === `procurement-${order.id}`)
-    if (!hasOffer) return NextResponse.json({ error: "quotation-required" }, { status: 409 })
+    const caseId = `procurement-${order.id}`
+    const quotationLines = quotationRows
+      .map((item) => parseQuotation(item.payload))
+      .filter((item): item is QuotationRecord => item !== null && item.procurementCaseId === caseId)
+      .flatMap((item) => item.lines)
+    const requiredLines = order.lines.filter((line) => line.fulfillmentStatus === "needs_procurement")
+    if (!quotationLinesCoverRequirements(requiredLines, quotationLines)) {
+      return NextResponse.json({ error: "quotation-coverage-required" }, { status: 409 })
+    }
     const nextAssignee = await firstUserWithRole("procurement_head")
     if (!nextAssignee) return NextResponse.json({ error: "next-assignee-missing" }, { status: 409 })
     updated = {
@@ -246,7 +265,11 @@ export async function POST(
   } else if (action === "review-procurement-offers") {
     const approved = body?.approved === true
     const comment = typeof body?.comment === "string" ? body.comment.trim().slice(0, 2_000) : ""
-    const quotationId = typeof body?.quotationId === "string" ? body.quotationId : ""
+    const quotationIds = Array.isArray(body?.quotationIds)
+      ? [...new Set(body.quotationIds.filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 200))]
+      : typeof body?.quotationId === "string" && body.quotationId
+        ? [body.quotationId]
+        : []
     const permission = approved ? "approvals.approve" : "approvals.reject"
     if (
       order.currentStep !== "price_check" ||
@@ -264,14 +287,25 @@ export async function POST(
       .from(appRecords)
       .where(eq(appRecords.namespace, "quotations"))
     const caseId = `procurement-${order.id}`
-    const caseQuotations = quotationRows.filter((item) => item.payload.procurementCaseId === caseId)
-    if (approved && !caseQuotations.some((item) => item.id === quotationId)) {
-      return NextResponse.json({ error: "quotation-not-found" }, { status: 404 })
+    const caseQuotations = quotationRows
+      .map((item) => ({ ...item, quotation: parseQuotation(item.payload) }))
+      .filter((item): item is { id: string; payload: Record<string, unknown>; quotation: QuotationRecord } => (
+        item.quotation !== null && item.quotation.procurementCaseId === caseId
+      ))
+    const selectedQuotationIds = new Set(quotationIds)
+    const selectedQuotations = caseQuotations.filter((item) => selectedQuotationIds.has(item.id))
+    const requiredLines = order.lines.filter((line) => line.fulfillmentStatus === "needs_procurement")
+    if (approved && (
+      !quotationIds.length ||
+      selectedQuotations.length !== quotationIds.length ||
+      !quotationLinesCoverRequirements(requiredLines, selectedQuotations.flatMap((item) => item.quotation.lines), "exact")
+    )) {
+      return NextResponse.json({ error: "quotation-selection-invalid" }, { status: 409 })
     }
     if (approved) {
       for (const quotation of caseQuotations) {
         await db.update(appRecords).set({
-          payload: { ...quotation.payload, selected: quotation.id === quotationId },
+          payload: { ...quotation.payload, selected: selectedQuotationIds.has(quotation.id) },
           updatedAt: now,
         }).where(and(eq(appRecords.namespace, "quotations"), eq(appRecords.id, quotation.id)))
       }
@@ -286,7 +320,7 @@ export async function POST(
       workflowHistory: appendHistory(order, "price_check", approved ? "approved" : "returned", session.userId, now),
     }
     auditAction = approved ? "order.procurement_offer_approved" : "order.procurement_offer_returned"
-    metadata = { ...metadata, toStep: updated.currentStep, quotationId: approved ? quotationId : undefined }
+    metadata = { ...metadata, toStep: updated.currentStep, quotationIds: approved ? quotationIds : undefined }
   } else {
     return NextResponse.json({ error: "invalid-action" }, { status: 400 })
   }

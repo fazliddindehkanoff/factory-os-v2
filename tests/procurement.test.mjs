@@ -4,8 +4,10 @@ import test from "node:test"
 import {
   calculateQuotationTotal,
   getLocalDateInputValue,
+  getRequiredProcurementQuantity,
   isExpectedDeliveryDateAllowed,
   normalizeSupplierPhone,
+  quotationLinesCoverRequirements,
   supplierPhoneMatches,
 } from "../src/lib/procurement.ts"
 import { formatWorkflowNotification } from "../src/lib/orders.ts"
@@ -18,6 +20,26 @@ test("quotation totals are calculated from quantity and unit price per position"
     ]),
     222_500,
   )
+})
+
+test("supplier offers can cover separate order positions", () => {
+  const required = [
+    { id: "line-a", quantity: 10, availableQuantity: 2 },
+    { id: "line-b", quantity: 5, availableQuantity: 0 },
+  ]
+  const separateSupplierLines = [
+    { orderLineId: "line-a", quantity: 8 },
+    { orderLineId: "line-b", quantity: 2 },
+    { orderLineId: "line-b", quantity: 3 },
+  ]
+  assert.equal(getRequiredProcurementQuantity(required[0]), 8)
+  assert.equal(quotationLinesCoverRequirements(required, separateSupplierLines), true)
+  assert.equal(quotationLinesCoverRequirements(required, separateSupplierLines, "exact"), true)
+  assert.equal(quotationLinesCoverRequirements(required, separateSupplierLines.slice(0, 2)), false)
+  assert.equal(quotationLinesCoverRequirements(required, [...separateSupplierLines, { orderLineId: "line-b", quantity: 1 }], "exact"), false)
+  assert.equal(quotationLinesCoverRequirements(required, [{ orderLineId: "other-order-line", quantity: 1 }]), false)
+  assert.equal(quotationLinesCoverRequirements(required, [{ orderLineId: "line-a", quantity: -1 }]), false)
+  assert.equal(quotationLinesCoverRequirements(required, [{ orderLineId: "line-a", quantity: 9 }]), false)
 })
 
 test("expected delivery dates cannot be earlier than today", () => {
