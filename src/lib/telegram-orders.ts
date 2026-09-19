@@ -23,6 +23,7 @@ import {
 import type { Locale } from "@/lib/i18n"
 import {
   getAssignedProcurementLineIds,
+  getProcurementSuborderForSpecialist,
   isOrderAssignedToProcurementSpecialist,
   isOrderWaitingForUser,
   type OrderRecord,
@@ -210,9 +211,12 @@ async function getVisibleOrderRows(userId: string, lang: Locale) {
     const visibleLines = access.procurementSpecialist
       ? order.lines.filter((line) => assignedLineIds.has(line.id))
       : order.lines
+    const procurementSuborder = access.procurementSpecialist
+      ? getProcurementSuborderForSpecialist(order, userId)
+      : undefined
     return {
     id: order.id,
-    number: order.number,
+    number: procurementSuborder?.number ?? order.number,
     type: order.type,
     status: toTelegramOrderStatus(order.status),
     urgency: order.urgency,

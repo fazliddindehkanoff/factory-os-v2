@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import type { Locale } from "@/lib/i18n"
 import {
+  buildProcurementSuborders,
   getProcurementLineAssignments,
   getRequiredProcurementLines,
   getUnassignedProcurementLines,
@@ -41,17 +42,7 @@ export function ProcurementLineAssignment({
   const unassignedLines = getUnassignedProcurementLines(order)
   const assignments = getProcurementLineAssignments(order)
   const assignedCount = lines.filter((line) => assignments[line.id]).length
-  const assignedSpecialists = (() => {
-    const counts = new Map<string, number>()
-    for (const userId of Object.values(assignments)) {
-      counts.set(userId, (counts.get(userId) ?? 0) + 1)
-    }
-    return [...counts.entries()].map(([userId, lineCount]) => ({
-      userId,
-      lineCount,
-      user: data.users.find((item) => item.id === userId),
-    }))
-  })()
+  const suborders = buildProcurementSuborders(order)
   const [specialistId, setSpecialistId] = React.useState(specialists[0]?.id ?? "")
   const [selectedLineIds, setSelectedLineIds] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
@@ -96,15 +87,25 @@ export function ProcurementLineAssignment({
         </Badge>
       </div>
 
-      {assignedSpecialists.length ? (
+      {suborders.length ? (
         <div className="space-y-2 rounded-lg border bg-muted/20 p-3" role="status">
-          <p className="text-xs font-medium text-muted-foreground">{copy.assignedSpecialists}</p>
-          <div className="flex flex-wrap gap-2">
-            {assignedSpecialists.map(({ userId, lineCount, user }) => (
-              <Badge key={userId} variant="secondary" className="max-w-full whitespace-normal">
-                <CheckIcon aria-hidden="true" />
-                {user?.fullName ?? userId} · {copy.assignedItems(lineCount)}
-              </Badge>
+          <p className="text-xs font-medium text-muted-foreground">{copy.splitOrders}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {suborders.map((suborder) => (
+              <div key={suborder.id} className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-3 py-2">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <CheckIcon className="size-4" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-mono text-sm font-semibold">{suborder.number}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {data.users.find((item) => item.id === suborder.specialistUserId)?.fullName ?? suborder.specialistUserId}
+                  </span>
+                </span>
+                <Badge variant="secondary" className="shrink-0">
+                  {copy.assignedItems(suborder.orderLineIds.length)}
+                </Badge>
+              </div>
             ))}
           </div>
         </div>
@@ -191,7 +192,7 @@ function assignmentCopy(lang: Locale) {
     selectPosition: "Выбрать позицию",
     quantity: "К закупке",
     unassigned: "Не назначено",
-    assignedSpecialists: "Назначенные специалисты",
+    splitOrders: "Разделённые заказы",
     assignedItems: (count: number) => `${count} поз.`,
     allAssigned: "Все позиции уже распределены между специалистами.",
     specialist: "Специалист снабжения",
@@ -208,7 +209,7 @@ function assignmentCopy(lang: Locale) {
     selectPosition: "Kalemi seç",
     quantity: "Satın alınacak",
     unassigned: "Atanmadı",
-    assignedSpecialists: "Atanan uzmanlar",
+    splitOrders: "Bölünmüş siparişler",
     assignedItems: (count: number) => `${count} kalem`,
     allAssigned: "Tüm kalemler uzmanlara atandı.",
     specialist: "Satın alma uzmanı",
@@ -225,7 +226,7 @@ function assignmentCopy(lang: Locale) {
     selectPosition: "Pozitsiyani tanlash",
     quantity: "Xarid miqdori",
     unassigned: "Biriktirilmagan",
-    assignedSpecialists: "Biriktirilgan ta’minotchilar",
+    splitOrders: "Bo‘lingan buyurtmalar",
     assignedItems: (count: number) => `${count} ta product`,
     allAssigned: "Barcha productlar ta’minotchilarga biriktirilgan.",
     specialist: "Ta’minotchi",

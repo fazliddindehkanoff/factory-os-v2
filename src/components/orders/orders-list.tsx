@@ -49,6 +49,7 @@ import { downloadOrderAttachment } from "@/lib/order-attachments";
 import {
   canUserViewRejectedOrder,
   getAssignedProcurementLineIds,
+  getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
   isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
@@ -146,8 +147,11 @@ export function OrdersList({
           `${product?.code} ${product?.titleUz} ${product?.titleRu} ${product?.titleTr}`,
       )
       .join(" ");
+    const suborderNumber = procurementSpecialistScoped
+      ? getProcurementSuborderForSpecialist(order, currentUser?.id)?.number ?? ""
+      : "";
     const searchText =
-      `${order.number} ${applicant?.fullName ?? ""} ${productSearch}`.toLocaleLowerCase();
+      `${order.number} ${suborderNumber} ${applicant?.fullName ?? ""} ${productSearch}`.toLocaleLowerCase();
 
     return (
       (!waitingOnly || waitingForCurrentUser(order)) &&
@@ -654,11 +658,12 @@ function OrderRow({
     ?.roleIds.includes("role-procurement_manager")
     ? getAssignedProcurementLineIds(order, currentUserId).length
     : order.lines.length;
+  const displayNumber = getProcurementSuborderForSpecialist(order, currentUserId)?.number ?? order.number;
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
       tabIndex={0}
-      aria-label={`${workflowCopy(lang).openDetails}: ${order.number}`}
+      aria-label={`${workflowCopy(lang).openDetails}: ${displayNumber}`}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -675,10 +680,10 @@ function OrderRow({
         <Checkbox
           checked={selected}
           onCheckedChange={(checked) => onToggle(order.id, checked === true)}
-          aria-label={`${messages.selectOption}: ${order.number}`}
+          aria-label={`${messages.selectOption}: ${displayNumber}`}
         />
       </TableCell>
-      <TableCell className="font-medium">{order.number}</TableCell>
+      <TableCell className="font-mono font-medium">{displayNumber}</TableCell>
       <TableCell>
         {order.type === "material" ? messages.material : messages.service}
       </TableCell>
@@ -788,6 +793,7 @@ function OrderDetailsDialog({
     "warehouse_receipt",
   ].includes(order.currentStep);
   const assignedLineIds = new Set(getAssignedProcurementLineIds(order, currentUser?.id));
+  const currentSuborder = getProcurementSuborderForSpecialist(order, currentUser?.id);
   const visibleLines = currentUser?.roleIds.includes("role-procurement_manager")
     ? order.lines.filter((line) => assignedLineIds.has(line.id))
     : order.lines;
@@ -840,7 +846,7 @@ function OrderDetailsDialog({
       >
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-8">
-            <DialogTitle>{order.number}</DialogTitle>
+            <DialogTitle className="font-mono">{currentSuborder?.number ?? order.number}</DialogTitle>
             <StatusBadge
               status={order.status}
               messages={messages}

@@ -12,6 +12,7 @@ import {
 } from "@/lib/app-records"
 import {
   getAssignedProcurementLineIds,
+  getProcurementSuborderForSpecialist,
   isOrderAssignedToProcurementSpecialist,
   type OrderRecord,
 } from "@/lib/orders"
@@ -113,7 +114,16 @@ export async function POST(
     ) {
       return NextResponse.json({ error: "quotation-lines-forbidden" }, { status: 403 })
     }
-    payload = { ...payload, createdByUserId: auth.session.userId }
+    const procurementSuborder = getProcurementSuborderForSpecialist(
+      order,
+      auth.session.userId,
+    )
+    payload = {
+      ...payload,
+      createdByUserId: auth.session.userId,
+      procurementSuborderId: procurementSuborder?.id,
+      procurementSuborderNumber: procurementSuborder?.number,
+    }
   }
 
   try {

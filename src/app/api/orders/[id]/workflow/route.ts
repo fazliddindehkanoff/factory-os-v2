@@ -16,6 +16,7 @@ import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import {
   areAllProcurementLinesAssigned,
+  buildProcurementSuborders,
   getProcurementLineAssignments,
   getProcurementSpecialistIds,
   getRequiredProcurementLines,
@@ -254,12 +255,21 @@ export async function POST(
       procurementLineAssignments: assignments,
     })
     const wasAwaitingAssignment = order.currentStep === "procurement_accept"
+    const procurementSuborders = buildProcurementSuborders({
+      ...order,
+      procurementSpecialistUserId: undefined,
+      procurementLineAssignments: assignments,
+    }, now)
+    const assignedSuborder = procurementSuborders.find(
+      (suborder) => suborder.specialistUserId === specialistUserId,
+    )
     updated = {
       ...order,
       procurementSpecialistUserId: allAssigned && specialistIds.length === 1
         ? specialistIds[0]
         : undefined,
       procurementLineAssignments: assignments,
+      procurementSuborders,
       procurementReviewComment: undefined,
       currentStep: allAssigned ? "sourcing" : "procurement_accept",
       waitingForUserId: allAssigned ? specialistIds[0] : session.userId,
@@ -275,6 +285,8 @@ export async function POST(
       toStep: updated.currentStep,
       specialistUserId,
       orderLineIds,
+      procurementSuborderId: assignedSuborder?.id,
+      procurementSuborderNumber: assignedSuborder?.number,
       allAssigned,
     }
   } else if (action === "submit-procurement-offers") {

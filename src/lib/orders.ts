@@ -210,10 +210,20 @@ export type OrderRecord = {
   waitingForUserId?: string
   procurementSpecialistUserId?: string
   procurementLineAssignments?: Record<string, string>
+  procurementSuborders?: ProcurementSuborder[]
   procurementReviewComment?: string
   lastActorUserId: string
   createdAt: string
   workflowHistory?: WorkflowHistoryEntry[]
+}
+
+export type ProcurementSuborder = {
+  id: string
+  number: string
+  suffix: number
+  specialistUserId: string
+  orderLineIds: string[]
+  createdAt: string
 }
 
 export function getRequiredProcurementLines(
@@ -242,6 +252,91 @@ export function getProcurementSpecialistIds(
   order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
 ) {
   return [...new Set(Object.values(getProcurementLineAssignments(order)))]
+}
+
+/**
+ * Keeps one stable procurement sub-order per specialist. New positions assigned
+ * to an existing specialist are appended to their original /n sub-order.
+ */
+export function buildProcurementSuborders(
+  order: Pick<
+    OrderRecord,
+    | "id"
+    | "number"
+    | "createdAt"
+    | "lines"
+    | "procurementLineAssignments"
+    | "procurementSpecialistUserId"
+    | "procurementSuborders"
+  >,
+  createdAt = order.createdAt,
+) {
+  const assignments = getProcurementLineAssignments(order)
+  const existing = Array.isArray(order.procurementSuborders)
+    ? order.procurementSuborders
+    : []
+  const bySpecialist = new Map<string, ProcurementSuborder>()
+  const usedSuffixes = new Set<number>()
+
+  for (const suborder of [...existing].sort((a, b) => a.suffix - b.suffix)) {
+    if (
+      !suborder ||
+      !suborder.specialistUserId ||
+      !Number.isInteger(suborder.suffix) ||
+      suborder.suffix < 1 ||
+      bySpecialist.has(suborder.specialistUserId) ||
+      usedSuffixes.has(suborder.suffix)
+    ) continue
+    bySpecialist.set(suborder.specialistUserId, suborder)
+    usedSuffixes.add(suborder.suffix)
+  }
+
+  const specialistIds = [...new Set(Object.values(assignments))]
+  let nextSuffix = Math.max(0, ...usedSuffixes) + 1
+  for (const specialistUserId of specialistIds) {
+    if (bySpecialist.has(specialistUserId)) continue
+    while (usedSuffixes.has(nextSuffix)) nextSuffix += 1
+    const suffix = nextSuffix
+    usedSuffixes.add(suffix)
+    bySpecialist.set(specialistUserId, {
+      id: `${order.id}-procurement-${suffix}`,
+      number: `${order.number}/${suffix}`,
+      suffix,
+      specialistUserId,
+      orderLineIds: [],
+      createdAt,
+    })
+    nextSuffix += 1
+  }
+
+  const lineIdsBySpecialist = new Map<string, string[]>()
+  for (const line of getRequiredProcurementLines(order)) {
+    const specialistUserId = assignments[line.id]
+    if (!specialistUserId) continue
+    lineIdsBySpecialist.set(specialistUserId, [
+      ...(lineIdsBySpecialist.get(specialistUserId) ?? []),
+      line.id,
+    ])
+  }
+
+  return [...bySpecialist.values()]
+    .filter((suborder) => specialistIds.includes(suborder.specialistUserId))
+    .map((suborder) => ({
+      ...suborder,
+      number: `${order.number}/${suborder.suffix}`,
+      orderLineIds: lineIdsBySpecialist.get(suborder.specialistUserId) ?? [],
+    }))
+    .sort((a, b) => a.suffix - b.suffix)
+}
+
+export function getProcurementSuborderForSpecialist(
+  order: Parameters<typeof buildProcurementSuborders>[0],
+  userId?: string,
+) {
+  if (!userId) return undefined
+  return buildProcurementSuborders(order).find(
+    (suborder) => suborder.specialistUserId === userId,
+  )
 }
 
 export function getUnassignedProcurementLines(

@@ -32,6 +32,8 @@ export type QuotationLineRecord = {
 export type QuotationRecord = {
   id: string
   procurementCaseId: string
+  procurementSuborderId?: string
+  procurementSuborderNumber?: string
   supplierId: string
   supplierName: string
   supplierPhone: string

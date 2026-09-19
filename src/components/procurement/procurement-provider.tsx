@@ -7,6 +7,7 @@ import { useSettings } from "@/components/settings/settings-provider"
 import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
   getAssignedProcurementLineIds,
+  getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
   isOrderAssignedToProcurementSpecialist,
 } from "@/lib/orders"
@@ -315,8 +316,11 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       )
     ) return false
     const normalizedLines = quotation.lines.map((line) => ({ ...line }))
+    const procurementSuborder = getProcurementSuborderForSpecialist(order, currentUserId)
     const record: QuotationRecord = {
       procurementCaseId: quotation.procurementCaseId,
+      procurementSuborderId: procurementSuborder?.id,
+      procurementSuborderNumber: procurementSuborder?.number,
       lines: normalizedLines,
       id: `quote-${crypto.randomUUID()}`,
       supplierId: supplier.id,

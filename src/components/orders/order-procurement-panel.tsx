@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
-import { getAssignedProcurementLineIds, type OrderRecord } from "@/lib/orders"
+import { getAssignedProcurementLineIds, getProcurementSuborderForSpecialist, type OrderRecord } from "@/lib/orders"
 import { getLocalDateInputValue, getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed, normalizeSupplierPhone, quotationLinesCoverRequirements, type ProcurementStage, type QuotationRecord } from "@/lib/procurement"
 import { getLocalizedTitle } from "@/lib/settings"
 
@@ -61,6 +61,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   ].includes(order.currentStep)
   const approvedQuotations = caseQuotes.filter((quotation) => quotation.selected)
   const assignedLineIds = new Set(getAssignedProcurementLineIds(order, currentUser?.id))
+  const currentSuborder = getProcurementSuborderForSpecialist(order, currentUser?.id)
   const offerableLines = requiredLines.filter((line) => assignedLineIds.has(line.id))
   const isAssignedSpecialist = assignedLineIds.size > 0
   const canAssignSpecialist = isHead && can("procurement.select_supplier")
@@ -199,7 +200,12 @@ export function OrderProcurementPanel({ order, lang, messages }: {
           <h3 id="order-procurement-title" className="text-sm font-semibold">{directorCanReviewCosts ? copy.expenseReview : copy.procurementActions}</h3>
           <p className="mt-1 text-xs text-muted-foreground">{directorCanReviewCosts ? copy.expenseReviewDescription : copy.workHere}</p>
         </div>
-        <StageBadge stage={procurementCase.stage} copy={copy} />
+        <div className="flex flex-wrap items-center gap-2">
+          {currentSuborder ? (
+            <Badge className="font-mono">{currentSuborder.number}</Badge>
+          ) : null}
+          <StageBadge stage={procurementCase.stage} copy={copy} />
+        </div>
       </div>
 
       {directorCanReviewCosts && approvedQuotations.length ? (
@@ -432,6 +438,11 @@ function OfferList({ quotations, order, lang, messages, copy, canApprove, select
               <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="break-words font-semibold">{quotation.supplierName}</p>
+                {quotation.procurementSuborderNumber ? (
+                  <Badge variant="outline" className="font-mono">
+                    {quotation.procurementSuborderNumber}
+                  </Badge>
+                ) : null}
                 {quotation.selected ? <Badge><CheckIcon />{copy.approvedOffer}</Badge> : null}
               </div>
               <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground"><PhoneIcon className="size-3.5" />{quotation.supplierPhone}</p>

@@ -7,9 +7,11 @@ import {
   canUserViewRejectedOrder,
   formatWorkflowNotification,
   areAllProcurementLinesAssigned,
+  buildProcurementSuborders,
   getAssignedProcurementLineIds,
   getProcurementLineAssignments,
   getProcurementSpecialistIds,
+  getProcurementSuborderForSpecialist,
   getUnassignedProcurementLines,
   getNextWorkflowStep,
   isOrderSuccessfullyClosed,
@@ -150,6 +152,58 @@ test("assigned procurement positions are excluded from further assignment", () =
   }
 
   assert.deepEqual(getUnassignedProcurementLines(order).map((line) => line.id), ["line-b"])
+})
+
+test("procurement sub-orders stay grouped by specialist instead of assignment event", () => {
+  const baseOrder = {
+    id: "order-17",
+    number: "ORD-2026-0017",
+    createdAt: "2026-09-19T08:00:00.000Z",
+    lines: [
+      { id: "line-a", quantity: 2, fulfillmentStatus: "needs_procurement" },
+      { id: "line-b", quantity: 3, fulfillmentStatus: "needs_procurement" },
+      { id: "line-c", quantity: 1, fulfillmentStatus: "needs_procurement" },
+    ],
+  }
+
+  const afterFirstAssignment = {
+    ...baseOrder,
+    procurementLineAssignments: { "line-c": "specialist-a" },
+  }
+  const firstSuborders = buildProcurementSuborders(afterFirstAssignment)
+  assert.deepEqual(firstSuborders.map((item) => item.number), ["ORD-2026-0017/1"])
+
+  const afterSecondAssignment = {
+    ...afterFirstAssignment,
+    procurementLineAssignments: {
+      ...afterFirstAssignment.procurementLineAssignments,
+      "line-a": "specialist-b",
+    },
+    procurementSuborders: firstSuborders,
+  }
+  const secondSuborders = buildProcurementSuborders(afterSecondAssignment)
+  assert.deepEqual(secondSuborders.map((item) => item.number), [
+    "ORD-2026-0017/1",
+    "ORD-2026-0017/2",
+  ])
+
+  const afterThirdAssignment = {
+    ...afterSecondAssignment,
+    procurementLineAssignments: {
+      ...afterSecondAssignment.procurementLineAssignments,
+      "line-b": "specialist-a",
+    },
+    procurementSuborders: secondSuborders,
+  }
+  const finalSuborders = buildProcurementSuborders(afterThirdAssignment)
+
+  assert.equal(finalSuborders.length, 2)
+  assert.deepEqual(finalSuborders[0].orderLineIds, ["line-b", "line-c"])
+  assert.deepEqual(finalSuborders[1].orderLineIds, ["line-a"])
+  assert.equal(
+    getProcurementSuborderForSpecialist(afterThirdAssignment, "specialist-a")?.number,
+    "ORD-2026-0017/1",
+  )
 })
 
 test("department supervisor approval advances and persists the next assignee payload", () => {

@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { Locale, Messages } from "@/lib/i18n"
-import { getProcurementLineAssignments } from "@/lib/orders"
+import { getProcurementLineAssignments, getProcurementSuborderForSpecialist } from "@/lib/orders"
 import type { ProcurementStage } from "@/lib/procurement"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
@@ -92,7 +92,7 @@ const DEFAULT_COLUMN_WIDTHS: Record<ColumnKey, number> = {
 const COLUMN_KEYS = Object.keys(DEFAULT_COLUMN_WIDTHS) as ColumnKey[]
 
 export function ProcurementWorkspace({ lang, messages }: { lang: Locale; messages: Messages }) {
-  const { can } = useAuthorization()
+  const { can, currentUser } = useAuthorization()
   const { orders } = useOrders()
   const { data } = useSettings()
   const { cases, quotations } = useProcurement()
@@ -132,6 +132,10 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
   }
 
   const casesByOrderId = new Map(cases.map((item) => [item.orderId, item]))
+  const isProcurementSpecialist = Boolean(
+    currentUser?.roleIds.includes("role-procurement_manager") &&
+    !currentUser.roleIds.includes("role-procurement_head"),
+  )
   const rows = orders.flatMap((order): ProcurementGridRow[] => {
     const procurementCase = casesByOrderId.get(order.id)
     const applicant = data.users.find((item) => item.id === order.applicantId)
@@ -146,9 +150,15 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
       (item) => item.procurementCaseId === procurementCase?.id,
     ).length
 
-    return order.lines
+    const visibleLines = isProcurementSpecialist
+      ? order.lines.filter((line) => assignments[line.id] === currentUser?.id)
+      : order.lines
+
+    return visibleLines
       .map((line) => {
-        const assignee = data.users.find((item) => item.id === assignments[line.id])
+        const assigneeId = assignments[line.id]
+        const assignee = data.users.find((item) => item.id === assigneeId)
+        const procurementSuborder = getProcurementSuborderForSpecialist(order, assigneeId)
         const product = data.products.find((item) => item.id === line.productId)
         const unit = data["unit-types"].find(
           (item) => item.id === (line.unitTypeId ?? product?.unitTypeId),
@@ -158,7 +168,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
           id: `${order.id}-${line.id}`,
           orderId: order.id,
           updatedAt: procurementCase?.updatedAt ?? order.createdAt,
-          orderNumber: order.number,
+          orderNumber: procurementSuborder?.number ?? order.number,
           applicant: applicant?.fullName ?? "—",
           department: department || "—",
           warehouse: warehouse ? getLocalizedTitle(warehouse, lang) : "—",
@@ -194,7 +204,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
   const statCards = [
     {
       label: copy.metrics.requests,
-      value: orders.length,
+      value: new Set(rows.map((row) => row.orderNumber)).size,
       note: copy.metrics.requestsNote,
       icon: ShoppingCartIcon,
       tone: "text-primary bg-primary/10",
