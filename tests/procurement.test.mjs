@@ -3,6 +3,7 @@ import test from "node:test"
 
 import {
   calculateQuotationTotal,
+  countCoveredProcurementLines,
   getLocalDateInputValue,
   getRequiredProcurementQuantity,
   isExpectedDeliveryDateAllowed,
@@ -34,6 +35,8 @@ test("supplier offers can cover separate order positions", () => {
   ]
   assert.equal(getRequiredProcurementQuantity(required[0]), 8)
   assert.equal(quotationLinesCoverRequirements(required, separateSupplierLines), true)
+  assert.equal(countCoveredProcurementLines(required, separateSupplierLines), 2)
+  assert.equal(countCoveredProcurementLines(required, separateSupplierLines.slice(0, 2)), 1)
   assert.equal(quotationLinesCoverRequirements(required, separateSupplierLines, "exact"), true)
   assert.equal(quotationLinesCoverRequirements(required, separateSupplierLines.slice(0, 2)), false)
   assert.equal(quotationLinesCoverRequirements(required, [...separateSupplierLines, { orderLineId: "line-b", quantity: 1 }], "exact"), false)

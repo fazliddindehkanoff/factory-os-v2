@@ -99,6 +99,16 @@ export function quotationLinesCoverRequirements(
   })
 }
 
+export function countCoveredProcurementLines(
+  requiredLines: readonly RequiredProcurementLine[],
+  quotationLines: readonly Pick<QuotationLineRecord, "orderLineId" | "quantity">[],
+) {
+  return requiredLines.filter((requiredLine) => quotationLinesCoverRequirements(
+    [requiredLine],
+    quotationLines.filter((quotationLine) => quotationLine.orderLineId === requiredLine.id),
+  )).length
+}
+
 export function getLocalDateInputValue(date = new Date()) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")

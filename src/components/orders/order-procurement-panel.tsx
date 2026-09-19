@@ -26,7 +26,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
 import { getAssignedProcurementLineIds, getProcurementSuborderForSpecialist, type OrderRecord } from "@/lib/orders"
-import { getLocalDateInputValue, getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed, normalizeSupplierPhone, quotationLinesCoverRequirements, type ProcurementStage, type QuotationRecord } from "@/lib/procurement"
+import { countCoveredProcurementLines, getLocalDateInputValue, getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed, normalizeSupplierPhone, quotationLinesCoverRequirements, type ProcurementStage, type QuotationRecord } from "@/lib/procurement"
 import { getLocalizedTitle } from "@/lib/settings"
 
 export function OrderProcurementPanel({ order, lang, messages }: {
@@ -87,7 +87,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   }, 0)
   const quotedLineIds = new Set(caseQuotes.flatMap((quotation) => quotation.lines.map((line) => line.orderLineId)))
   const quotedLines = caseQuotes.flatMap((quotation) => quotation.lines)
-  const coveredLineCount = offerableLines.filter((line) => quotationLinesCoverRequirements([line], quotedLines)).length
+  const coveredLineCount = countCoveredProcurementLines(offerableLines, quotedLines)
   const selectedExpense = approvedQuotations.reduce((total, quotation) => total + quotation.amount, 0)
   const visibleCaseQuotes = isHead || directorCanReviewCosts
     ? caseQuotes
