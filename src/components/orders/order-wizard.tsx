@@ -627,7 +627,6 @@ function OrderWizardForm({
                 type="date"
                 min={today}
                 value={draft.expectedDate}
-                onClick={(event) => event.currentTarget.showPicker()}
                 onChange={(event) => updateDraft("expectedDate", event.target.value)}
               />
             </Field>

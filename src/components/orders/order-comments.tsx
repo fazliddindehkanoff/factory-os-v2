@@ -43,7 +43,7 @@ export function OrderComments({
   const [sending, setSending] = React.useState(false)
   const [mentionIndex, setMentionIndex] = React.useState(0)
   const composerRef = React.useRef<HTMLTextAreaElement>(null)
-  const threadEndRef = React.useRef<HTMLDivElement>(null)
+  const threadRef = React.useRef<HTMLDivElement>(null)
   const hasMounted = React.useRef(false)
   const searchParams = useSearchParams()
   const highlightedId = searchParams.get("comment") ?? undefined
@@ -97,7 +97,7 @@ export function OrderComments({
       return
     }
     if (new URLSearchParams(window.location.search).get("comment")) return
-    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" })
   }, [comments.length])
 
   function userFor(comment: OrderComment) {
@@ -176,6 +176,7 @@ export function OrderComments({
       </div>
 
       <div
+        ref={threadRef}
         role="log"
         aria-label={messages.comments}
         aria-live="polite"
@@ -260,7 +261,6 @@ export function OrderComments({
             <p className="mt-1 max-w-sm text-xs text-muted-foreground">{messages.noCommentsDescription}</p>
           </div>
         )}
-        <div ref={threadEndRef} />
       </div>
 
       <form

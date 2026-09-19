@@ -745,6 +745,7 @@ function OrderDetailsDialog({
 }) {
   const { currentUser } = useAuthorization();
   const copy = workflowCopy(lang);
+  const dialogContentRef = React.useRef<HTMLDivElement>(null);
   const [quantities, setQuantities] = React.useState<Record<string, number>>(
     () =>
       Object.fromEntries(
@@ -791,6 +792,11 @@ function OrderDetailsDialog({
     ? order.lines.filter((line) => assignedLineIds.has(line.id))
     : order.lines;
 
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    dialogContentRef.current?.scrollTo({ top: 0 });
+  }, [open, order.id]);
+
   async function downloadAttachment(attachment: NonNullable<OrderRecord["attachments"]>[number]) {
     setAttachmentError("");
     setDownloadingAttachmentId(attachment.id);
@@ -827,7 +833,11 @@ function OrderDetailsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100svh-1rem)] w-[calc(100vw-1rem)] min-w-0 max-w-[calc(100vw-1rem)] overflow-x-hidden overflow-y-auto p-4 sm:max-h-[calc(100svh-2rem)] sm:w-full sm:max-w-4xl">
+      <DialogContent
+        ref={dialogContentRef}
+        initialFocus={dialogContentRef}
+        className="max-h-[calc(100svh-1rem)] w-[calc(100vw-1rem)] min-w-0 max-w-[calc(100vw-1rem)] overflow-x-hidden overflow-y-auto p-4 sm:max-h-[calc(100svh-2rem)] sm:w-full sm:max-w-4xl"
+      >
         <DialogHeader>
           <div className="flex flex-wrap items-center gap-2 pr-8">
             <DialogTitle>{order.number}</DialogTitle>
