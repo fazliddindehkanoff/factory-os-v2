@@ -19,6 +19,7 @@ import {
   getProcurementLineAssignments,
   getProcurementSpecialistIds,
   getRequiredProcurementLines,
+  getUnassignedProcurementLines,
   isOrderAssignedToProcurementSpecialist,
   type OrderRecord,
   type WorkflowHistoryEntry,
@@ -222,6 +223,7 @@ export async function POST(
         ))]
       : []
     const requiredLineIds = new Set(getRequiredProcurementLines(order).map((line) => line.id))
+    const unassignedLineIds = new Set(getUnassignedProcurementLines(order).map((line) => line.id))
     const validSpecialist =
       await activeUser(specialistUserId) &&
       await hasRole(specialistUserId, "procurement_manager") &&
@@ -236,6 +238,10 @@ export async function POST(
       !await hasRole(session.userId, "procurement_head") ||
       !await userHasPermission(session.userId, "procurement.select_supplier")
     ) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+
+    if (orderLineIds.some((lineId) => !unassignedLineIds.has(lineId))) {
+      return NextResponse.json({ error: "procurement-lines-already-assigned" }, { status: 409 })
+    }
 
     const assignments = {
       ...getProcurementLineAssignments(order),

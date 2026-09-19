@@ -1157,9 +1157,14 @@ function WorkflowTimeline({
       const historyActor = data.users.find(
         (user) => user.id === historyEntry?.actorUserId,
       );
-      const subtitle = historyEntry && ["completed", "rejected", "skipped"].includes(state)
-        ? `${historyActor?.fullName ?? assignee?.fullName ?? copy.unassigned} · ${formatDateTime(historyEntry.createdAt, lang)}`
-        : assignee?.fullName ?? copy.unassigned;
+      const procurementAssigneeNames = workflowProcurementAssigneeNames(step, order, data);
+      const subtitle = procurementAssigneeNames
+        ? historyEntry && ["completed", "rejected", "skipped"].includes(state)
+          ? `${procurementAssigneeNames} · ${formatDateTime(historyEntry.createdAt, lang)}`
+          : procurementAssigneeNames
+        : historyEntry && ["completed", "rejected", "skipped"].includes(state)
+          ? `${historyActor?.fullName ?? assignee?.fullName ?? copy.unassigned} · ${formatDateTime(historyEntry.createdAt, lang)}`
+          : assignee?.fullName ?? copy.unassigned;
       return {
         id: step,
         title: stepLabel(step, lang),
@@ -1216,6 +1221,17 @@ function WorkflowTimeline({
       </ol>
     </section>
   );
+}
+
+function workflowProcurementAssigneeNames(
+  step: Exclude<OrderRecord["currentStep"], "complete">,
+  order: Pick<OrderRecord, "lines" | "procurementSpecialistUserId" | "procurementLineAssignments">,
+  data: ReturnType<typeof useSettings>["data"],
+) {
+  if (!["sourcing", "procurement_order"].includes(step)) return "";
+  return getProcurementSpecialistIds(order)
+    .map((userId) => data.users.find((user) => user.id === userId)?.fullName ?? userId)
+    .join(", ");
 }
 
 function workflowAssignee(

@@ -244,6 +244,13 @@ export function getProcurementSpecialistIds(
   return [...new Set(Object.values(getProcurementLineAssignments(order)))]
 }
 
+export function getUnassignedProcurementLines(
+  order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
+) {
+  const assignments = getProcurementLineAssignments(order)
+  return getRequiredProcurementLines(order).filter((line) => !assignments[line.id])
+}
+
 export function getAssignedProcurementLineIds(
   order: Pick<OrderRecord, "lines" | "procurementLineAssignments" | "procurementSpecialistUserId">,
   userId?: string,

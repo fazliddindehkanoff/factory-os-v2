@@ -13,6 +13,7 @@ import type { Locale } from "@/lib/i18n"
 import {
   getProcurementLineAssignments,
   getRequiredProcurementLines,
+  getUnassignedProcurementLines,
   type OrderRecord,
 } from "@/lib/orders"
 import { getRequiredProcurementQuantity } from "@/lib/procurement"
@@ -37,8 +38,20 @@ export function ProcurementLineAssignment({
       user.departmentIds.some((id) => currentUser?.departmentIds.includes(id)),
   )
   const lines = getRequiredProcurementLines(order)
+  const unassignedLines = getUnassignedProcurementLines(order)
   const assignments = getProcurementLineAssignments(order)
   const assignedCount = lines.filter((line) => assignments[line.id]).length
+  const assignedSpecialists = (() => {
+    const counts = new Map<string, number>()
+    for (const userId of Object.values(assignments)) {
+      counts.set(userId, (counts.get(userId) ?? 0) + 1)
+    }
+    return [...counts.entries()].map(([userId, lineCount]) => ({
+      userId,
+      lineCount,
+      user: data.users.find((item) => item.id === userId),
+    }))
+  })()
   const [specialistId, setSpecialistId] = React.useState(specialists[0]?.id ?? "")
   const [selectedLineIds, setSelectedLineIds] = React.useState<string[]>([])
   const [saving, setSaving] = React.useState(false)
@@ -83,66 +96,87 @@ export function ProcurementLineAssignment({
         </Badge>
       </div>
 
-      <fieldset className="space-y-2">
-        <legend className="sr-only">{copy.selectPositions}</legend>
-        {lines.map((line, index) => {
-          const product = data.products.find((item) => item.id === line.productId)
-          const unit = data["unit-types"].find((item) => item.id === (line.unitTypeId ?? product?.unitTypeId))
-          const assignedUser = data.users.find((user) => user.id === assignments[line.id])
-          const selected = selectedLineIds.includes(line.id)
-          const title = product ? getLocalizedTitle(product, lang) : line.productId
-          return (
-            <label
-              key={line.id}
-              className={`grid min-h-16 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-lg border p-3 transition-colors sm:flex ${selected ? "border-primary/40 bg-primary/5" : "hover:bg-muted/35"}`}
-            >
-              <Checkbox
-                className="mt-0.5"
-                checked={selected}
-                onCheckedChange={(checked) => toggleLine(line.id, checked === true)}
-                aria-label={`${copy.selectPosition}: ${title}`}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block break-words text-sm font-medium">{index + 1}. {title}</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  {copy.quantity}: {getRequiredProcurementQuantity(line)} {unit ? getLocalizedTitle(unit, lang) : ""}
-                </span>
-              </span>
-              <Badge variant={assignedUser ? "secondary" : "outline"} className="col-start-2 w-fit max-w-full shrink-0 whitespace-normal sm:ml-auto sm:max-w-44 sm:text-right">
-                {assignedUser ? <CheckIcon aria-hidden="true" /> : null}
-                {assignedUser?.fullName ?? copy.unassigned}
+      {assignedSpecialists.length ? (
+        <div className="space-y-2 rounded-lg border bg-muted/20 p-3" role="status">
+          <p className="text-xs font-medium text-muted-foreground">{copy.assignedSpecialists}</p>
+          <div className="flex flex-wrap gap-2">
+            {assignedSpecialists.map(({ userId, lineCount, user }) => (
+              <Badge key={userId} variant="secondary" className="max-w-full whitespace-normal">
+                <CheckIcon aria-hidden="true" />
+                {user?.fullName ?? userId} · {copy.assignedItems(lineCount)}
               </Badge>
-            </label>
-          )
-        })}
-      </fieldset>
-
-      <div className="grid gap-3 rounded-lg bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-        <div className="grid gap-1.5">
-          <Label htmlFor="order-procurement-specialist">{copy.specialist}</Label>
-          <select
-            id="order-procurement-specialist"
-            value={effectiveSpecialistId}
-            onChange={(event) => setSpecialistId(event.target.value)}
-            className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            {specialists.map((specialist) => (
-              <option key={specialist.id} value={specialist.id}>
-                {specialist.fullName} — {copy.workload(workloadFor(specialist.id))}
-              </option>
             ))}
-          </select>
+          </div>
         </div>
-        <Button
-          type="button"
-          className="w-full sm:w-auto"
-          disabled={!effectiveSpecialistId || !selectedLineIds.length || saving}
-          onClick={saveAssignment}
-        >
-          <UserRoundIcon aria-hidden="true" />
-          {saving ? copy.saving : copy.assignSelected(selectedLineIds.length)}
-        </Button>
-      </div>
+      ) : null}
+
+      {unassignedLines.length ? (
+        <fieldset className="space-y-2">
+          <legend className="sr-only">{copy.selectPositions}</legend>
+          {unassignedLines.map((line) => {
+            const product = data.products.find((item) => item.id === line.productId)
+            const unit = data["unit-types"].find((item) => item.id === (line.unitTypeId ?? product?.unitTypeId))
+            const selected = selectedLineIds.includes(line.id)
+            const title = product ? getLocalizedTitle(product, lang) : line.productId
+            const positionNumber = lines.findIndex((item) => item.id === line.id) + 1
+            return (
+              <label
+                key={line.id}
+                className={`grid min-h-16 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-lg border p-3 transition-colors sm:flex ${selected ? "border-primary/40 bg-primary/5" : "hover:bg-muted/35"}`}
+              >
+                <Checkbox
+                  className="mt-0.5"
+                  checked={selected}
+                  onCheckedChange={(checked) => toggleLine(line.id, checked === true)}
+                  aria-label={`${copy.selectPosition}: ${title}`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-sm font-medium">{positionNumber}. {title}</span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    {copy.quantity}: {getRequiredProcurementQuantity(line)} {unit ? getLocalizedTitle(unit, lang) : ""}
+                  </span>
+                </span>
+                <Badge variant="outline" className="col-start-2 w-fit max-w-full shrink-0 whitespace-normal sm:ml-auto sm:max-w-44 sm:text-right">
+                  {copy.unassigned}
+                </Badge>
+              </label>
+            )
+          })}
+        </fieldset>
+      ) : (
+        <p className="rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground" role="status">
+          {copy.allAssigned}
+        </p>
+      )}
+
+      {unassignedLines.length ? (
+        <div className="grid gap-3 rounded-lg bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+          <div className="grid gap-1.5">
+            <Label htmlFor="order-procurement-specialist">{copy.specialist}</Label>
+            <select
+              id="order-procurement-specialist"
+              value={effectiveSpecialistId}
+              onChange={(event) => setSpecialistId(event.target.value)}
+              className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {specialists.map((specialist) => (
+                <option key={specialist.id} value={specialist.id}>
+                  {specialist.fullName} — {copy.workload(workloadFor(specialist.id))}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button
+            type="button"
+            className="w-full sm:w-auto"
+            disabled={!effectiveSpecialistId || !selectedLineIds.length || saving}
+            onClick={saveAssignment}
+          >
+            <UserRoundIcon aria-hidden="true" />
+            {saving ? copy.saving : copy.assignSelected(selectedLineIds.length)}
+          </Button>
+        </div>
+      ) : null}
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
     </section>
   )
@@ -151,12 +185,15 @@ export function ProcurementLineAssignment({
 function assignmentCopy(lang: Locale) {
   if (lang === "ru") return {
     title: "Распределить позиции",
-    description: "Отметьте товары и назначьте их ответственному специалисту. Уже назначенные позиции можно передать другому специалисту.",
+    description: "Отметьте товары и назначьте их ответственному специалисту. Назначенные позиции скрываются из списка.",
     progress: (assigned: number, total: number) => `Назначено ${assigned} из ${total}`,
     selectPositions: "Позиции для назначения",
     selectPosition: "Выбрать позицию",
     quantity: "К закупке",
     unassigned: "Не назначено",
+    assignedSpecialists: "Назначенные специалисты",
+    assignedItems: (count: number) => `${count} поз.`,
+    allAssigned: "Все позиции уже распределены между специалистами.",
     specialist: "Специалист снабжения",
     workload: (count: number) => count ? `в работе: ${count}` : "свободен",
     assignSelected: (count: number) => `Назначить (${count})`,
@@ -165,12 +202,15 @@ function assignmentCopy(lang: Locale) {
   }
   if (lang === "tr") return {
     title: "Kalemleri dağıt",
-    description: "Ürünleri seçip sorumlu satın alma uzmanına atayın. Atanmış kalemleri başka bir uzmana aktarabilirsiniz.",
+    description: "Ürünleri seçip sorumlu satın alma uzmanına atayın. Atanan kalemler listeden gizlenir.",
     progress: (assigned: number, total: number) => `${assigned}/${total} atandı`,
     selectPositions: "Atanacak kalemler",
     selectPosition: "Kalemi seç",
     quantity: "Satın alınacak",
     unassigned: "Atanmadı",
+    assignedSpecialists: "Atanan uzmanlar",
+    assignedItems: (count: number) => `${count} kalem`,
+    allAssigned: "Tüm kalemler uzmanlara atandı.",
     specialist: "Satın alma uzmanı",
     workload: (count: number) => count ? `aktif: ${count}` : "müsait",
     assignSelected: (count: number) => `Ata (${count})`,
@@ -179,12 +219,15 @@ function assignmentCopy(lang: Locale) {
   }
   return {
     title: "Pozitsiyalarini taqsimlash",
-    description: "Productlarni belgilang va mas’ul ta’minotchiga biriktiring. Biriktirilgan pozitsiyani boshqa mutaxassisga qayta berish mumkin.",
+    description: "Productlarni belgilang va mas’ul ta’minotchiga biriktiring. Biriktirilgan productlar ro‘yxatdan yashiriladi.",
     progress: (assigned: number, total: number) => `${assigned}/${total} biriktirilgan`,
     selectPositions: "Biriktiriladigan pozitsiyalar",
     selectPosition: "Pozitsiyani tanlash",
     quantity: "Xarid miqdori",
     unassigned: "Biriktirilmagan",
+    assignedSpecialists: "Biriktirilgan ta’minotchilar",
+    assignedItems: (count: number) => `${count} ta product`,
+    allAssigned: "Barcha productlar ta’minotchilarga biriktirilgan.",
     specialist: "Ta’minotchi",
     workload: (count: number) => count ? `faol: ${count}` : "bo‘sh",
     assignSelected: (count: number) => `Biriktirish (${count})`,

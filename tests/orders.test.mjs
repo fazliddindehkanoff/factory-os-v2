@@ -10,6 +10,7 @@ import {
   getAssignedProcurementLineIds,
   getProcurementLineAssignments,
   getProcurementSpecialistIds,
+  getUnassignedProcurementLines,
   getNextWorkflowStep,
   isOrderSuccessfullyClosed,
   isOrderWaitingForUser,
@@ -131,6 +132,24 @@ test("procurement remains incomplete while a required position is unassigned", (
     ],
   }
   assert.equal(areAllProcurementLinesAssigned(order), false)
+  assert.deepEqual(getUnassignedProcurementLines(order).map((line) => line.id), ["line-b"])
+})
+
+test("assigned procurement positions are excluded from further assignment", () => {
+  const order = {
+    procurementLineAssignments: {
+      "line-a": "specialist-a",
+      "line-c": "specialist-b",
+    },
+    lines: [
+      { id: "line-a", quantity: 2, fulfillmentStatus: "needs_procurement" },
+      { id: "line-b", quantity: 3, fulfillmentStatus: "needs_procurement" },
+      { id: "line-c", quantity: 1, fulfillmentStatus: "needs_procurement" },
+      { id: "line-stock", quantity: 5, fulfillmentStatus: "fulfilled_from_stock" },
+    ],
+  }
+
+  assert.deepEqual(getUnassignedProcurementLines(order).map((line) => line.id), ["line-b"])
 })
 
 test("department supervisor approval advances and persists the next assignee payload", () => {
