@@ -125,6 +125,45 @@ test("procurement positions can be split between specialists", () => {
   assert.equal(areAllProcurementLinesAssigned(order), true)
 })
 
+test("a submitted procurement sub-order no longer waits for its specialist", () => {
+  const order = {
+    currentStep: "sourcing",
+    waitingForUserId: "specialist-b",
+    procurementLineAssignments: {
+      "line-a": "specialist-a",
+      "line-b": "specialist-b",
+    },
+    procurementSuborders: [
+      {
+        id: "order-1-procurement-1",
+        number: "ORD-2026-0001/1",
+        suffix: 1,
+        specialistUserId: "specialist-a",
+        orderLineIds: ["line-a"],
+        status: "submitted",
+        submittedAt: "2026-09-19T12:00:00.000Z",
+        createdAt: "2026-09-19T11:00:00.000Z",
+      },
+      {
+        id: "order-1-procurement-2",
+        number: "ORD-2026-0001/2",
+        suffix: 2,
+        specialistUserId: "specialist-b",
+        orderLineIds: ["line-b"],
+        status: "sourcing",
+        createdAt: "2026-09-19T11:00:00.000Z",
+      },
+    ],
+    lines: [
+      { id: "line-a", quantity: 2, fulfillmentStatus: "needs_procurement" },
+      { id: "line-b", quantity: 3, fulfillmentStatus: "needs_procurement" },
+    ],
+  }
+
+  assert.equal(isOrderWaitingForUser(order, "specialist-a"), false)
+  assert.equal(isOrderWaitingForUser(order, "specialist-b"), true)
+})
+
 test("procurement remains incomplete while a required position is unassigned", () => {
   const order = {
     procurementLineAssignments: { "line-a": "specialist-a" },
@@ -172,6 +211,7 @@ test("procurement sub-orders stay grouped by specialist instead of assignment ev
   }
   const firstSuborders = buildProcurementSuborders(afterFirstAssignment)
   assert.deepEqual(firstSuborders.map((item) => item.number), ["ORD-2026-0017/1"])
+  assert.equal(firstSuborders[0].status, "sourcing")
 
   const afterSecondAssignment = {
     ...afterFirstAssignment,

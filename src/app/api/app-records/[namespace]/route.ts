@@ -100,6 +100,9 @@ export async function POST(
     const assignedLineIds = new Set(order
       ? getAssignedProcurementLineIds(order, auth.session.userId)
       : [])
+    const procurementSuborder = order
+      ? getProcurementSuborderForSpecialist(order, auth.session.userId)
+      : undefined
     const submittedLineIds = quotationLines.map((line) => (
       line && typeof line === "object" && typeof line.orderLineId === "string"
         ? line.orderLineId
@@ -108,16 +111,13 @@ export async function POST(
     if (
       !order ||
       order.currentStep !== "sourcing" ||
+      procurementSuborder?.status === "submitted" ||
       !quotationLines.length ||
       new Set(submittedLineIds).size !== submittedLineIds.length ||
       submittedLineIds.some((lineId) => !lineId || !assignedLineIds.has(lineId))
     ) {
       return NextResponse.json({ error: "quotation-lines-forbidden" }, { status: 403 })
     }
-    const procurementSuborder = getProcurementSuborderForSpecialist(
-      order,
-      auth.session.userId,
-    )
     payload = {
       ...payload,
       createdByUserId: auth.session.userId,

@@ -102,9 +102,16 @@ export function ProcurementLineAssignment({
                     {data.users.find((item) => item.id === suborder.specialistUserId)?.fullName ?? suborder.specialistUserId}
                   </span>
                 </span>
-                <Badge variant="secondary" className="shrink-0">
-                  {copy.assignedItems(suborder.orderLineIds.length)}
-                </Badge>
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <Badge variant="secondary">
+                    {copy.assignedItems(suborder.orderLineIds.length)}
+                  </Badge>
+                  {suborder.status === "submitted" ? (
+                    <Badge variant="outline" className="border-primary/30 text-[10px] text-primary">
+                      {copy.submitted}
+                    </Badge>
+                  ) : null}
+                </span>
               </div>
             ))}
           </div>
@@ -193,6 +200,7 @@ function assignmentCopy(lang: Locale) {
     quantity: "К закупке",
     unassigned: "Не назначено",
     splitOrders: "Разделённые заказы",
+    submitted: "Отправлен",
     assignedItems: (count: number) => `${count} поз.`,
     allAssigned: "Все позиции уже распределены между специалистами.",
     specialist: "Специалист снабжения",
@@ -210,6 +218,7 @@ function assignmentCopy(lang: Locale) {
     quantity: "Satın alınacak",
     unassigned: "Atanmadı",
     splitOrders: "Bölünmüş siparişler",
+    submitted: "Gönderildi",
     assignedItems: (count: number) => `${count} kalem`,
     allAssigned: "Tüm kalemler uzmanlara atandı.",
     specialist: "Satın alma uzmanı",
@@ -227,6 +236,7 @@ function assignmentCopy(lang: Locale) {
     quantity: "Xarid miqdori",
     unassigned: "Biriktirilmagan",
     splitOrders: "Bo‘lingan buyurtmalar",
+    submitted: "Yuborilgan",
     assignedItems: (count: number) => `${count} ta product`,
     allAssigned: "Barcha productlar ta’minotchilarga biriktirilgan.",
     specialist: "Ta’minotchi",

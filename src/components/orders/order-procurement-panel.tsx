@@ -62,10 +62,11 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   const approvedQuotations = caseQuotes.filter((quotation) => quotation.selected)
   const assignedLineIds = new Set(getAssignedProcurementLineIds(order, currentUser?.id))
   const currentSuborder = getProcurementSuborderForSpecialist(order, currentUser?.id)
+  const isCurrentSuborderSubmitted = currentSuborder?.status === "submitted"
   const offerableLines = requiredLines.filter((line) => assignedLineIds.has(line.id))
   const isAssignedSpecialist = assignedLineIds.size > 0
   const canAssignSpecialist = isHead && can("procurement.select_supplier")
-  const canEnterOffers = isAssignedSpecialist && can("procurement.quote")
+  const canEnterOffers = isAssignedSpecialist && !isCurrentSuborderSubmitted && can("procurement.quote")
   const canApproveOffer = isHead && can("procurement.select_supplier") && can("approvals.approve")
   const canRejectOffers = isHead && can("procurement.select_supplier") && can("approvals.reject")
   const [supplierPhone, setSupplierPhone] = React.useState("")
@@ -86,7 +87,7 @@ export function OrderProcurementPanel({ order, lang, messages }: {
   }, 0)
   const quotedLineIds = new Set(caseQuotes.flatMap((quotation) => quotation.lines.map((line) => line.orderLineId)))
   const quotedLines = caseQuotes.flatMap((quotation) => quotation.lines)
-  const coveredLineCount = requiredLines.filter((line) => quotationLinesCoverRequirements([line], quotedLines)).length
+  const coveredLineCount = offerableLines.filter((line) => quotationLinesCoverRequirements([line], quotedLines)).length
   const selectedExpense = approvedQuotations.reduce((total, quotation) => total + quotation.amount, 0)
   const visibleCaseQuotes = isHead || directorCanReviewCosts
     ? caseQuotes
@@ -252,6 +253,16 @@ export function OrderProcurementPanel({ order, lang, messages }: {
         onApprove={handleApprove}
       />
 
+      {isAssignedSpecialist && isCurrentSuborderSubmitted && order.currentStep === "sourcing" ? (
+        <div className="flex items-start gap-3 rounded-lg border border-primary/25 bg-primary/5 p-3" role="status">
+          <CheckCircle2Icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-semibold">{copy.suborderSubmitted}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{copy.waitingForOtherSuborders}</p>
+          </div>
+        </div>
+      ) : null}
+
       {canEnterOffers && order.currentStep === "sourcing" ? (
         <div className="space-y-4 rounded-lg border bg-background p-3">
           <h4 className="flex items-center gap-2 text-sm font-semibold"><FilePlus2Icon className="size-4" />{copy.addOffer}</h4>
@@ -375,13 +386,13 @@ export function OrderProcurementPanel({ order, lang, messages }: {
             </div>
             <Button onClick={handleAddOffer}><CalculatorIcon />{copy.saveOffer}</Button>
           </div>
-          {caseQuotes.length ? (
+          {visibleCaseQuotes.length ? (
             <div className="flex flex-col justify-between gap-3 rounded-lg border bg-muted/20 p-3 sm:flex-row sm:items-center">
               <div>
-                <p className="text-sm font-medium">{copy.offerCoverage(coveredLineCount, requiredLines.length)}</p>
+                <p className="text-sm font-medium">{copy.offerCoverage(coveredLineCount, offerableLines.length)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{copy.coverageHint}</p>
               </div>
-              <Button variant="outline" onClick={handleSubmitReview} disabled={coveredLineCount !== requiredLines.length}><SendIcon />{copy.sendForReview}</Button>
+              <Button variant="outline" onClick={handleSubmitReview} disabled={coveredLineCount !== offerableLines.length}><SendIcon />{copy.sendForReview}</Button>
             </div>
           ) : null}
         </div>
@@ -511,7 +522,7 @@ function formatDeliveryDate(value: string, lang: Locale) {
 
 function procurementOrderCopy(lang: Locale) {
   if (lang === "ru") return {
-    procurementActions: "Работа снабжения", workHere: "Назначение, предложения и проверка выполняются прямо в заявке.", preparingProcurement: "Подготавливаем закупочную часть заявки…", assignSpecialist: "Назначить специалиста", editSpecialist: "Изменить назначенного специалиста", assign: "Назначить", updateAssignment: "Сохранить назначение", available: "Свободен", activeAssignments: (count: number) => `В работе: ${count}`, addOffer: "Добавить предложение", supplierPhone: "Телефон поставщика", phoneLookupHint: "Номер с + проверяется полностью; без + — по последним цифрам без кода страны.", supplierName: "Название поставщика", supplierFound: "Поставщик найден и заполнен автоматически.", supplierWillBeCreated: "Если номера нет в базе, поставщик будет создан при сохранении предложения.", enterNewSupplierName: "Введите название нового поставщика", unitPrices: "Цена за единицу по позициям", quantity: "Количество", unitPrice: "Цена за единицу", positionTotal: "Сумма позиции", offerTotal: "Итого по предложению", saveOffer: "Сохранить предложение", sendForReview: "Отправить руководителю", supplierOffers: "Предложения поставщиков", noOffers: "Предложений пока нет.", withNds: "С НДС", withoutNds: "Без НДС", approvedOffer: "Одобрено", approveOffer: "Одобрить предложение", returnForRevision: "Вернуть на доработку", rejectionComment: "Комментарий руководителя", explainChanges: "Укажите, что нужно исправить…", rejectOffers: "Вернуть специалисту", changesRequested: "Требуются изменения", completeOffer: "Введите телефон, название нового поставщика, цену и ожидаемую дату поставки каждой позиции.", addOfferFirst: "Добавьте хотя бы одно полное предложение.", commentRequired: "Добавьте комментарий для специалиста.", actionFailed: "Действие не выполнено. Обновите страницу и повторите попытку.",
+    procurementActions: "Работа снабжения", workHere: "Назначение, предложения и проверка выполняются прямо в заявке.", preparingProcurement: "Подготавливаем закупочную часть заявки…", assignSpecialist: "Назначить специалиста", editSpecialist: "Изменить назначенного специалиста", assign: "Назначить", updateAssignment: "Сохранить назначение", available: "Свободен", activeAssignments: (count: number) => `В работе: ${count}`, addOffer: "Добавить предложение", supplierPhone: "Телефон поставщика", phoneLookupHint: "Номер с + проверяется полностью; без + — по последним цифрам без кода страны.", supplierName: "Название поставщика", supplierFound: "Поставщик найден и заполнен автоматически.", supplierWillBeCreated: "Если номера нет в базе, поставщик будет создан при сохранении предложения.", enterNewSupplierName: "Введите название нового поставщика", unitPrices: "Цена за единицу по позициям", quantity: "Количество", unitPrice: "Цена за единицу", positionTotal: "Сумма позиции", offerTotal: "Итого по предложению", saveOffer: "Сохранить предложение", sendForReview: "Отправить руководителю", supplierOffers: "Предложения поставщиков", noOffers: "Предложений пока нет.", withNds: "С НДС", withoutNds: "Без НДС", approvedOffer: "Одобрено", approveOffer: "Одобрить предложение", returnForRevision: "Вернуть на доработку", rejectionComment: "Комментарий руководителя", explainChanges: "Укажите, что нужно исправить…", rejectOffers: "Вернуть специалисту", changesRequested: "Требуются изменения", completeOffer: "Введите телефон, название нового поставщика, цену и ожидаемую дату поставки каждой позиции.", addOfferFirst: "Покройте предложениями все позиции вашего подзаказа.", commentRequired: "Добавьте комментарий для специалиста.", actionFailed: "Действие не выполнено. Обновите страницу и повторите попытку.",
     selectPositions: "Выберите позиции для этого поставщика",
     selectedPositions: (count: number, total: number) => `Выбрано: ${count} из ${total}`,
     clearSelection: "Снять выбор",
@@ -530,11 +541,13 @@ function procurementOrderCopy(lang: Locale) {
     expenseReviewDescription: "Все предложения поставщиков, выбранное предложение и стоимость каждой позиции.",
     selectedOfferExpense: "Итоговая стоимость выбранного предложения",
     waitingUntilOffersSent: "Заявка останется в статусе «Ожидает меня», пока вы не отправите предложения руководителю снабжения.",
+    suborderSubmitted: "Ваш подзаказ отправлен руководителю",
+    waitingForOtherSuborders: "Изменения заблокированы. Общая заявка перейдёт на проверку после отправки остальных подзаказов.",
     deliveryDateNotPast: "Ожидаемая дата поставки не может быть раньше сегодняшней даты.",
     stages: { awaiting_assignment: "Ожидает назначения", collecting_offers: "Сбор предложений", head_review: "Проверка руководителя", changes_requested: "На доработке", approved: "Предложение одобрено" },
   }
   if (lang === "tr") return {
-    procurementActions: "Satın alma işlemleri", workHere: "Atama, teklifler ve inceleme doğrudan sipariş içinde yapılır.", preparingProcurement: "Siparişin satın alma bölümü hazırlanıyor…", assignSpecialist: "Uzman ata", editSpecialist: "Atanan uzmanı değiştir", assign: "Ata", updateAssignment: "Atamayı kaydet", available: "Müsait", activeAssignments: (count: number) => `Aktif sipariş: ${count}`, addOffer: "Teklif ekle", supplierPhone: "Tedarikçi telefonu", phoneLookupHint: "+ ile başlayan numara tamamen; + olmadan girilen numara ülke kodu hariç son rakamlarla eşleştirilir.", supplierName: "Tedarikçi adı", supplierFound: "Tedarikçi bulundu ve otomatik dolduruldu.", supplierWillBeCreated: "Numara kayıtlı değilse teklif kaydedilirken tedarikçi otomatik oluşturulur.", enterNewSupplierName: "Yeni tedarikçi adını girin", unitPrices: "Kalem bazında birim fiyat", quantity: "Miktar", unitPrice: "Birim fiyat", positionTotal: "Kalem toplamı", offerTotal: "Teklif toplamı", saveOffer: "Teklifi kaydet", sendForReview: "Yöneticiye gönder", supplierOffers: "Tedarikçi teklifleri", noOffers: "Henüz teklif yok.", withNds: "KDV dahil", withoutNds: "KDV hariç", approvedOffer: "Onaylandı", approveOffer: "Teklifi onayla", returnForRevision: "Yeniden çalışmaya gönder", rejectionComment: "Yönetici yorumu", explainChanges: "Nelerin düzeltilmesi gerektiğini yazın…", rejectOffers: "Uzmana geri gönder", changesRequested: "Değişiklik gerekli", completeOffer: "Telefonu, yeni tedarikçi adını, fiyatı ve her kalemin beklenen teslim tarihini girin.", addOfferFirst: "En az bir eksiksiz teklif ekleyin.", commentRequired: "Uzman için yorum ekleyin.", actionFailed: "İşlem tamamlanamadı. Sayfayı yenileyip tekrar deneyin.",
+    procurementActions: "Satın alma işlemleri", workHere: "Atama, teklifler ve inceleme doğrudan sipariş içinde yapılır.", preparingProcurement: "Siparişin satın alma bölümü hazırlanıyor…", assignSpecialist: "Uzman ata", editSpecialist: "Atanan uzmanı değiştir", assign: "Ata", updateAssignment: "Atamayı kaydet", available: "Müsait", activeAssignments: (count: number) => `Aktif sipariş: ${count}`, addOffer: "Teklif ekle", supplierPhone: "Tedarikçi telefonu", phoneLookupHint: "+ ile başlayan numara tamamen; + olmadan girilen numara ülke kodu hariç son rakamlarla eşleştirilir.", supplierName: "Tedarikçi adı", supplierFound: "Tedarikçi bulundu ve otomatik dolduruldu.", supplierWillBeCreated: "Numara kayıtlı değilse teklif kaydedilirken tedarikçi otomatik oluşturulur.", enterNewSupplierName: "Yeni tedarikçi adını girin", unitPrices: "Kalem bazında birim fiyat", quantity: "Miktar", unitPrice: "Birim fiyat", positionTotal: "Kalem toplamı", offerTotal: "Teklif toplamı", saveOffer: "Teklifi kaydet", sendForReview: "Yöneticiye gönder", supplierOffers: "Tedarikçi teklifleri", noOffers: "Henüz teklif yok.", withNds: "KDV dahil", withoutNds: "KDV hariç", approvedOffer: "Onaylandı", approveOffer: "Teklifi onayla", returnForRevision: "Yeniden çalışmaya gönder", rejectionComment: "Yönetici yorumu", explainChanges: "Nelerin düzeltilmesi gerektiğini yazın…", rejectOffers: "Uzmana geri gönder", changesRequested: "Değişiklik gerekli", completeOffer: "Telefonu, yeni tedarikçi adını, fiyatı ve her kalemin beklenen teslim tarihini girin.", addOfferFirst: "Alt siparişinizdeki tüm kalemleri tekliflerle karşılayın.", commentRequired: "Uzman için yorum ekleyin.", actionFailed: "İşlem tamamlanamadı. Sayfayı yenileyip tekrar deneyin.",
     selectPositions: "Bu tedarikçi için kalemleri seçin",
     selectedPositions: (count: number, total: number) => `Seçilen: ${count}/${total}`,
     clearSelection: "Seçimi temizle",
@@ -553,11 +566,13 @@ function procurementOrderCopy(lang: Locale) {
     expenseReviewDescription: "Tüm tedarikçi teklifleri, seçilen teklif ve her kalemin maliyet dökümü.",
     selectedOfferExpense: "Seçilen teklifin toplam maliyeti",
     waitingUntilOffersSent: "Teklifleri Satın Alma Yöneticisine gönderene kadar sipariş ‘Beni bekliyor’ durumunda kalır.",
+    suborderSubmitted: "Alt siparişiniz yöneticiye gönderildi",
+    waitingForOtherSuborders: "Değişiklikler kilitlendi. Ana sipariş, diğer alt siparişler gönderildikten sonra incelemeye geçer.",
     deliveryDateNotPast: "Beklenen teslim tarihi bugünden önce olamaz.",
     stages: { awaiting_assignment: "Atama bekliyor", collecting_offers: "Teklif toplanıyor", head_review: "Yönetici incelemesi", changes_requested: "Yeniden çalışılıyor", approved: "Teklif onaylandı" },
   }
   return {
-    procurementActions: "Ta’minot ishlari", workHere: "Biriktirish, taklif kiritish va tekshirish bevosita buyurtma ichida bajariladi.", preparingProcurement: "Buyurtmaning ta’minot qismi tayyorlanmoqda…", assignSpecialist: "Mutaxassisni biriktirish", editSpecialist: "Biriktirilgan mutaxassisni o‘zgartirish", assign: "Biriktirish", updateAssignment: "Biriktirishni saqlash", available: "Bo‘sh", activeAssignments: (count: number) => `Faol buyurtmalar: ${count}`, addOffer: "Taklif qo‘shish", supplierPhone: "Yetkazib beruvchi telefoni", phoneLookupHint: "+ bilan boshlangan raqam to‘liq; + siz kiritilgan raqam esa mamlakat kodisiz oxirgi raqamlar bo‘yicha tekshiriladi.", supplierName: "Yetkazib beruvchi nomi", supplierFound: "Yetkazib beruvchi topildi va avtomatik to‘ldirildi.", supplierWillBeCreated: "Raqam bazada bo‘lmasa, taklif saqlanganda yangi yetkazib beruvchi avtomatik yaratiladi.", enterNewSupplierName: "Yangi yetkazib beruvchi nomini kiriting", unitPrices: "Pozitsiyalar bo‘yicha birlik narxi", quantity: "Miqdor", unitPrice: "Birlik narxi", positionTotal: "Pozitsiya summasi", offerTotal: "Taklifning umumiy summasi", saveOffer: "Taklifni saqlash", sendForReview: "Rahbarga yuborish", supplierOffers: "Yetkazib beruvchi takliflari", noOffers: "Hozircha takliflar yo‘q.", withNds: "QQS bilan", withoutNds: "QQSsiz", approvedOffer: "Tasdiqlandi", approveOffer: "Taklifni tasdiqlash", returnForRevision: "Qayta ishlashga yuborish", rejectionComment: "Rahbar izohi", explainChanges: "Nimani o‘zgartirish kerakligini yozing…", rejectOffers: "Mutaxassisga qaytarish", changesRequested: "O‘zgartirish talab qilindi", completeOffer: "Telefon, yangi yetkazib beruvchi nomi, narx va har bir pozitsiyaning kutilayotgan yetkazib berish sanasini kiriting.", addOfferFirst: "Kamida bitta to‘liq taklif qo‘shing.", commentRequired: "Mutaxassis uchun izoh kiriting.", actionFailed: "Amal bajarilmadi. Sahifani yangilab, qayta urinib ko‘ring.",
+    procurementActions: "Ta’minot ishlari", workHere: "Biriktirish, taklif kiritish va tekshirish bevosita buyurtma ichida bajariladi.", preparingProcurement: "Buyurtmaning ta’minot qismi tayyorlanmoqda…", assignSpecialist: "Mutaxassisni biriktirish", editSpecialist: "Biriktirilgan mutaxassisni o‘zgartirish", assign: "Biriktirish", updateAssignment: "Biriktirishni saqlash", available: "Bo‘sh", activeAssignments: (count: number) => `Faol buyurtmalar: ${count}`, addOffer: "Taklif qo‘shish", supplierPhone: "Yetkazib beruvchi telefoni", phoneLookupHint: "+ bilan boshlangan raqam to‘liq; + siz kiritilgan raqam esa mamlakat kodisiz oxirgi raqamlar bo‘yicha tekshiriladi.", supplierName: "Yetkazib beruvchi nomi", supplierFound: "Yetkazib beruvchi topildi va avtomatik to‘ldirildi.", supplierWillBeCreated: "Raqam bazada bo‘lmasa, taklif saqlanganda yangi yetkazib beruvchi avtomatik yaratiladi.", enterNewSupplierName: "Yangi yetkazib beruvchi nomini kiriting", unitPrices: "Pozitsiyalar bo‘yicha birlik narxi", quantity: "Miqdor", unitPrice: "Birlik narxi", positionTotal: "Pozitsiya summasi", offerTotal: "Taklifning umumiy summasi", saveOffer: "Taklifni saqlash", sendForReview: "Rahbarga yuborish", supplierOffers: "Yetkazib beruvchi takliflari", noOffers: "Hozircha takliflar yo‘q.", withNds: "QQS bilan", withoutNds: "QQSsiz", approvedOffer: "Tasdiqlandi", approveOffer: "Taklifni tasdiqlash", returnForRevision: "Qayta ishlashga yuborish", rejectionComment: "Rahbar izohi", explainChanges: "Nimani o‘zgartirish kerakligini yozing…", rejectOffers: "Mutaxassisga qaytarish", changesRequested: "O‘zgartirish talab qilindi", completeOffer: "Telefon, yangi yetkazib beruvchi nomi, narx va har bir pozitsiyaning kutilayotgan yetkazib berish sanasini kiriting.", addOfferFirst: "Sub-orderingizdagi barcha pozitsiyalarni taklif bilan to‘liq qoplang.", commentRequired: "Mutaxassis uchun izoh kiriting.", actionFailed: "Amal bajarilmadi. Sahifani yangilab, qayta urinib ko‘ring.",
     selectPositions: "Ushbu supplier uchun pozitsiyalarni tanlang",
     selectedPositions: (count: number, total: number) => `Tanlangan: ${count}/${total}`,
     clearSelection: "Tanlovni tozalash",
@@ -576,6 +591,8 @@ function procurementOrderCopy(lang: Locale) {
     expenseReviewDescription: "Barcha yetkazib beruvchi takliflari, tanlangan taklif va har bir pozitsiya xarajatlari.",
     selectedOfferExpense: "Tanlangan taklifning umumiy xarajati",
     waitingUntilOffersSent: "Takliflarni Ta’minot rahbariga yubormaguningizcha buyurtma “Meni kutmoqda” holatida qoladi.",
+    suborderSubmitted: "Sub-orderingiz rahbarga yuborildi",
+    waitingForOtherSuborders: "O‘zgartirishlar yopildi. Qolgan sub-orderlar yuborilgach, umumiy buyurtma rahbar tekshiruviga o‘tadi.",
     deliveryDateNotPast: "Kutilayotgan yetkazib berish sanasi bugungi sanadan oldin bo‘lishi mumkin emas.",
     stages: { awaiting_assignment: "Biriktirish kutilmoqda", collecting_offers: "Takliflar yig‘ilmoqda", head_review: "Rahbar tekshiruvi", changes_requested: "Qayta ishlanmoqda", approved: "Taklif tasdiqlandi" },
   }

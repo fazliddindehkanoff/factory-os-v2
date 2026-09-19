@@ -223,6 +223,8 @@ export type ProcurementSuborder = {
   suffix: number
   specialistUserId: string
   orderLineIds: string[]
+  status: "sourcing" | "submitted"
+  submittedAt?: string
   createdAt: string
 }
 
@@ -304,6 +306,7 @@ export function buildProcurementSuborders(
       suffix,
       specialistUserId,
       orderLineIds: [],
+      status: "sourcing",
       createdAt,
     })
     nextSuffix += 1
@@ -325,6 +328,8 @@ export function buildProcurementSuborders(
       ...suborder,
       number: `${order.number}/${suborder.suffix}`,
       orderLineIds: lineIdsBySpecialist.get(suborder.specialistUserId) ?? [],
+      status: suborder.status === "submitted" ? "submitted" as const : "sourcing" as const,
+      submittedAt: suborder.status === "submitted" ? suborder.submittedAt : undefined,
     }))
     .sort((a, b) => a.suffix - b.suffix)
 }
@@ -436,7 +441,7 @@ export function resolveOrderApplicantId(
 export function isOrderWaitingForUser(
   order: Pick<
     OrderRecord,
-    "currentStep" | "waitingForUserId" | "lines" | "procurementLineAssignments" | "procurementSpecialistUserId"
+    "currentStep" | "waitingForUserId" | "lines" | "procurementLineAssignments" | "procurementSpecialistUserId" | "procurementSuborders"
   >,
   userId?: string,
   warehouseResponsibleUserId?: string,
@@ -449,7 +454,10 @@ export function isOrderWaitingForUser(
     return warehouseResponsibleUserId === userId
   }
   if (order.currentStep === "sourcing") {
-    return isOrderAssignedToProcurementSpecialist(order, userId)
+    return isOrderAssignedToProcurementSpecialist(order, userId) &&
+      order.procurementSuborders?.find(
+        (suborder) => suborder.specialistUserId === userId,
+      )?.status !== "submitted"
   }
   return order.waitingForUserId === userId
 }

@@ -349,18 +349,27 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     if (!can("procurement.quote")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
     const order = orders.find((item) => item.id === procurementCase?.orderId)
-    const requiredLines = order?.lines.filter((line) => line.fulfillmentStatus === "needs_procurement") ?? []
+    const currentSuborder = order
+      ? getProcurementSuborderForSpecialist(order, currentUserId)
+      : undefined
+    const currentLineIds = new Set(currentSuborder?.orderLineIds ?? [])
+    const requiredLines = order?.lines.filter((line) => currentLineIds.has(line.id)) ?? []
     const quotationLines = quotations
       .filter((item) => item.procurementCaseId === procurementCaseId)
       .flatMap((item) => item.lines)
+      .filter((line) => currentLineIds.has(line.orderLineId))
+    const updatedOrder = procurementCase && order && currentSuborder &&
+      quotationLinesCoverRequirements(requiredLines, quotationLines)
+      ? await submitProcurementOffers(procurementCase.orderId)
+      : undefined
     if (
       !procurementCase ||
       !order ||
-      !quotationLinesCoverRequirements(requiredLines, quotationLines) ||
-      !await submitProcurementOffers(procurementCase.orderId)
+      !currentSuborder ||
+      !updatedOrder
     ) return false
     updateCase(procurementCaseId, {
-      stage: "head_review",
+      stage: updatedOrder.currentStep === "price_check" ? "head_review" : "collecting_offers",
       reviewComment: undefined,
       updatedAt: new Date().toISOString(),
     })

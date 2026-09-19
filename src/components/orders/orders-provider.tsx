@@ -49,7 +49,7 @@ type OrdersContextValue = {
     specialistUserId: string,
     orderLineIds: string[],
   ) => Promise<boolean>
-  submitProcurementOffers: (orderId: string) => Promise<boolean>
+  submitProcurementOffers: (orderId: string) => Promise<OrderRecord | undefined>
   reviewProcurementOffers: (orderId: string, approved: boolean, comment?: string, quotationIds?: string[]) => Promise<boolean>
   addOrderComment: (orderId: string, body: string, replyToId?: string) => boolean
   markNotificationsRead: () => void
@@ -548,17 +548,19 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       !can("procurement.quote") ||
       order.currentStep !== "sourcing" ||
       !isOrderAssignedToProcurementSpecialist(order, currentUserId)
-    ) return false
+    ) return undefined
     let updated: OrderRecord
     try {
       updated = await runOrderWorkflowAction<OrderRecord>(orderId, "submit-procurement-offers")
     } catch {
-      return false
+      return undefined
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
-    const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
-    notify(updated.waitingForUserId, updated, { kind: "procurement_offers_submitted", actorName })
-    return true
+    if (updated.currentStep === "price_check") {
+      const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
+      notify(updated.waitingForUserId, updated, { kind: "procurement_offers_submitted", actorName })
+    }
+    return updated
   }
 
   async function reviewProcurementOffers(orderId: string, approved: boolean, comment = "", quotationIds: string[] = []) {

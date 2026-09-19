@@ -18,6 +18,7 @@ import {
   areAllProcurementLinesAssigned,
   buildProcurementSuborders,
   getProcurementLineAssignments,
+  getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
   getRequiredProcurementLines,
   getUnassignedProcurementLines,
@@ -298,26 +299,50 @@ export async function POST(
     const quotationRows = await db.select({ payload: appRecords.payload }).from(appRecords)
       .where(eq(appRecords.namespace, "quotations"))
     const caseId = `procurement-${order.id}`
+    const procurementSuborders = buildProcurementSuborders(order)
+    const currentSuborder = getProcurementSuborderForSpecialist(order, session.userId)
+    if (!currentSuborder || currentSuborder.status === "submitted") {
+      return NextResponse.json({ error: "procurement-suborder-not-actionable" }, { status: 409 })
+    }
+    const currentLineIds = new Set(currentSuborder.orderLineIds)
     const quotationLines = quotationRows
       .map((item) => parseQuotation(item.payload))
       .filter((item): item is QuotationRecord => item !== null && item.procurementCaseId === caseId)
       .flatMap((item) => item.lines)
-    const requiredLines = order.lines.filter((line) => line.fulfillmentStatus === "needs_procurement")
+      .filter((line) => currentLineIds.has(line.orderLineId))
+    const requiredLines = order.lines.filter((line) => currentLineIds.has(line.id))
     if (!quotationLinesCoverRequirements(requiredLines, quotationLines)) {
       return NextResponse.json({ error: "quotation-coverage-required" }, { status: 409 })
     }
-    const nextAssignee = await firstUserWithRole("procurement_head")
+    const updatedSuborders = procurementSuborders.map((suborder) => (
+      suborder.id === currentSuborder.id
+        ? { ...suborder, status: "submitted" as const, submittedAt: now }
+        : suborder
+    ))
+    const allSubmitted = updatedSuborders.every((suborder) => suborder.status === "submitted")
+    const nextAssignee = allSubmitted
+      ? await firstUserWithRole("procurement_head")
+      : updatedSuborders.find((suborder) => suborder.status !== "submitted")?.specialistUserId
     if (!nextAssignee) return NextResponse.json({ error: "next-assignee-missing" }, { status: 409 })
     updated = {
       ...order,
-      currentStep: "price_check",
+      procurementSuborders: updatedSuborders,
+      currentStep: allSubmitted ? "price_check" : "sourcing",
       waitingForUserId: nextAssignee,
       lastActorUserId: session.userId,
       status: "in_progress",
-      workflowHistory: appendHistory(order, "sourcing", "completed", session.userId, now),
+      workflowHistory: allSubmitted
+        ? appendHistory(order, "sourcing", "completed", session.userId, now)
+        : order.workflowHistory,
     }
     auditAction = "order.procurement_offers_submitted"
-    metadata = { ...metadata, toStep: updated.currentStep }
+    metadata = {
+      ...metadata,
+      toStep: updated.currentStep,
+      procurementSuborderId: currentSuborder.id,
+      procurementSuborderNumber: currentSuborder.number,
+      allSubmitted,
+    }
   } else if (action === "review-procurement-offers") {
     const approved = body?.approved === true
     const comment = typeof body?.comment === "string" ? body.comment.trim().slice(0, 2_000) : ""
@@ -369,6 +394,13 @@ export async function POST(
     updated = {
       ...order,
       procurementReviewComment: approved ? undefined : comment,
+      procurementSuborders: approved
+        ? buildProcurementSuborders(order)
+        : buildProcurementSuborders(order).map((suborder) => ({
+            ...suborder,
+            status: "sourcing" as const,
+            submittedAt: undefined,
+          })),
       currentStep: approved ? "director" : "sourcing",
       waitingForUserId: nextAssignee,
       lastActorUserId: session.userId,
