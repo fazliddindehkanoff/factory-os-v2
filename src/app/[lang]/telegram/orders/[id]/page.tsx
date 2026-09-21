@@ -60,6 +60,12 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
         <ArrowLeftIcon className="size-4" />{copy.backToOrders}
       </Link>
 
+      {order.parentOrderId || order.childOrders.length ? <nav className="tg-card mb-4 space-y-2 rounded-xl border p-3" aria-label={copy.orderInformation}>
+        <p className="text-xs font-semibold">{lang === "ru" ? "Связанные заказы" : lang === "tr" ? "İlgili siparişler" : "Bog‘liq buyurtmalar"}</p>
+        {order.parentOrderId ? <Link className="flex min-h-11 items-center text-sm text-primary underline" href={`/${lang}/telegram/orders/${encodeURIComponent(order.parentOrderId)}`}>{order.parentOrderNumber}</Link> : null}
+        {order.childOrders.map((child) => <Link key={child.id} className="flex min-h-11 items-center text-sm text-primary underline" href={`/${lang}/telegram/orders/${encodeURIComponent(child.id)}`}>{child.number}</Link>)}
+      </nav> : null}
+
       <section className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.06),0_8px_22px_-14px_rgba(16,30,60,0.18)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

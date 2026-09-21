@@ -15,14 +15,13 @@ import {
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import {
-  areAllProcurementLinesAssigned,
-  buildProcurementSuborders,
-  getProcurementLineAssignments,
-  getProcurementSuborderForSpecialist,
+  advanceProcurementLines,
+  getProcurementLinesAtStep,
   getProcurementSpecialistIds,
   getRequiredProcurementLines,
   getUnassignedProcurementLines,
   isOrderAssignedToProcurementSpecialist,
+  planProcurementAssignment,
   type OrderRecord,
   type WorkflowHistoryEntry,
 } from "@/lib/orders"
@@ -121,24 +120,27 @@ async function persistOrder(
   actorUserId: string,
   action: string,
   metadata: Record<string, unknown>,
+  quotationUpdates: { id: string; payload: Record<string, unknown> }[] = [],
 ) {
   const updatedAt = new Date().toISOString()
-  const result = await db.update(appRecords)
-    .set({ payload: updated as unknown as Record<string, unknown>, updatedAt })
-    .where(and(
-      eq(appRecords.namespace, "orders"),
-      eq(appRecords.id, id),
-      eq(appRecords.updatedAt, stored.updatedAt),
-    ))
-  if (result.rowsAffected !== 1) return false
-  try {
-    await db.insert(auditEvents).values({
+  return db.transaction(async (tx) => {
+    const result = await tx.update(appRecords)
+      .set({ payload: updated as unknown as Record<string, unknown>, updatedAt })
+      .where(and(
+        eq(appRecords.namespace, "orders"),
+        eq(appRecords.id, id),
+        eq(appRecords.updatedAt, stored.updatedAt),
+      ))
+    if (result.rowsAffected !== 1) return false
+    for (const quotation of quotationUpdates) {
+      await tx.update(appRecords).set({ payload: quotation.payload, updatedAt })
+        .where(and(eq(appRecords.namespace, "quotations"), eq(appRecords.id, quotation.id)))
+    }
+    await tx.insert(auditEvents).values({
       id: randomUUID(), actorUserId, action, entityType: "order", entityId: id, metadata,
     })
-  } catch {
-    // The workflow transition remains authoritative if optional auditing is unavailable.
-  }
-  return true
+    return true
+  })
 }
 
 function numberMap(value: unknown) {
@@ -176,10 +178,14 @@ export async function POST(
   if (!stored) return NextResponse.json({ error: "order-not-found" }, { status: 404 })
   const { order, row } = stored
   const now = new Date().toISOString()
+  if (order.procurementSplit && action !== "assign-procurement-specialist") {
+    return NextResponse.json({ error: "use-child-order" }, { status: 409 })
+  }
 
   let updated: OrderRecord | null = null
   let auditAction = ""
   let metadata: Record<string, unknown> = { fromStep: order.currentStep }
+  let quotationUpdates: { id: string; payload: Record<string, unknown> }[] = []
 
   if (action === "warehouse-report") {
     const quantities = numberMap(body?.quantities)
@@ -232,6 +238,7 @@ export async function POST(
       await shareDepartment(session.userId, specialistUserId)
     if (
       !specialistUserId ||
+      order.parentOrderId ||
       !orderLineIds.length ||
       orderLineIds.some((lineId) => !requiredLineIds.has(lineId)) ||
       !validSpecialist ||
@@ -245,103 +252,70 @@ export async function POST(
       return NextResponse.json({ error: "procurement-lines-already-assigned" }, { status: 409 })
     }
 
-    const assignments = {
-      ...getProcurementLineAssignments(order),
-      ...Object.fromEntries(orderLineIds.map((lineId) => [lineId, specialistUserId])),
-    }
-    const specialistIds = [...new Set(Object.values(assignments))]
-    const allAssigned = areAllProcurementLinesAssigned({
-      ...order,
-      procurementSpecialistUserId: undefined,
-      procurementLineAssignments: assignments,
-    })
-    const wasAwaitingAssignment = order.currentStep === "procurement_accept"
-    const procurementSuborders = buildProcurementSuborders({
-      ...order,
-      procurementSpecialistUserId: undefined,
-      procurementLineAssignments: assignments,
-    }, now)
-    const assignedSuborder = procurementSuborders.find(
-      (suborder) => suborder.specialistUserId === specialistUserId,
-    )
-    updated = {
-      ...order,
-      procurementSpecialistUserId: allAssigned && specialistIds.length === 1
-        ? specialistIds[0]
-        : undefined,
-      procurementLineAssignments: assignments,
-      procurementSuborders,
-      procurementReviewComment: undefined,
-      currentStep: allAssigned ? "sourcing" : "procurement_accept",
-      waitingForUserId: allAssigned ? specialistIds[0] : session.userId,
-      lastActorUserId: session.userId,
-      status: "in_progress",
-      workflowHistory: wasAwaitingAssignment && allAssigned
-        ? appendHistory(order, "procurement_accept", "completed", session.userId, now)
-        : order.workflowHistory,
-    }
-    auditAction = "order.procurement_assigned"
-    metadata = {
-      ...metadata,
-      toStep: updated.currentStep,
-      specialistUserId,
-      orderLineIds,
-      procurementSuborderId: assignedSuborder?.id,
-      procurementSuborderNumber: assignedSuborder?.number,
-      allAssigned,
+    try {
+      const result = await db.transaction(async (tx) => {
+        // Acquire the SQLite write lock before reading children. The revision
+        // check prevents concurrent heads from allocating the same position.
+        const locked = await tx.update(appRecords).set({ updatedAt: now }).where(and(
+          eq(appRecords.namespace, "orders"), eq(appRecords.id, id), eq(appRecords.updatedAt, row.updatedAt),
+        ))
+        if (locked.rowsAffected !== 1) throw new Error("order-changed")
+        const rows = await tx.select().from(appRecords).where(eq(appRecords.namespace, "orders"))
+        const children = rows.map((item) => item.payload as unknown as OrderRecord)
+          .filter((item) => item.parentOrderId === id)
+        const plan = planProcurementAssignment(order, children, specialistUserId, orderLineIds, session.userId, now)
+        await tx.update(appRecords).set({ payload: plan.parent as unknown as Record<string, unknown> })
+          .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, id)))
+        const childPayload = plan.child as unknown as Record<string, unknown>
+        if (children.some((child) => child.id === plan.child.id)) {
+          await tx.update(appRecords).set({ payload: childPayload, updatedAt: now })
+            .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, plan.child.id)))
+        } else {
+          await tx.insert(appRecords).values({ namespace: "orders", id: plan.child.id, payload: childPayload,
+            createdByUserId: order.createdByUserId, createdAt: now, updatedAt: now })
+        }
+        await tx.insert(auditEvents).values({ id: randomUUID(), actorUserId: session.userId,
+          action: "order.procurement_split_assigned", entityType: "order", entityId: id,
+          metadata: { specialistUserId, orderLineIds, childOrderId: plan.child.id, childOrderNumber: plan.child.number } })
+        return { order: plan.parent, relatedOrders: [plan.child] }
+      })
+      return NextResponse.json(result)
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "assignment-failed"
+      const expected = ["order-changed", "procurement-lines-already-assigned", "procurement-child-already-submitted", "procurement-assignment-forbidden"]
+      return NextResponse.json({ error: expected.includes(code) ? code : "assignment-failed" }, { status: 409 })
     }
   } else if (action === "submit-procurement-offers") {
     if (
-      order.currentStep !== "sourcing" ||
+      !getProcurementLinesAtStep(order, "sourcing", session.userId).length ||
       !isOrderAssignedToProcurementSpecialist(order, session.userId) ||
       !await userHasPermission(session.userId, "procurement.quote")
     ) return NextResponse.json({ error: "forbidden" }, { status: 403 })
     const quotationRows = await db.select({ payload: appRecords.payload }).from(appRecords)
       .where(eq(appRecords.namespace, "quotations"))
     const caseId = `procurement-${order.id}`
-    const procurementSuborders = buildProcurementSuborders(order)
-    const currentSuborder = getProcurementSuborderForSpecialist(order, session.userId)
-    if (!currentSuborder || currentSuborder.status === "submitted") {
-      return NextResponse.json({ error: "procurement-suborder-not-actionable" }, { status: 409 })
-    }
-    const currentLineIds = new Set(currentSuborder.orderLineIds)
+    const sourcingLines = getProcurementLinesAtStep(order, "sourcing", session.userId)
+    const currentLineIds = new Set(sourcingLines.map((line) => line.id))
     const quotationLines = quotationRows
       .map((item) => parseQuotation(item.payload))
       .filter((item): item is QuotationRecord => item !== null && item.procurementCaseId === caseId)
       .flatMap((item) => item.lines)
       .filter((line) => currentLineIds.has(line.orderLineId))
-    const requiredLines = order.lines.filter((line) => currentLineIds.has(line.id))
-    if (!quotationLinesCoverRequirements(requiredLines, quotationLines)) {
+    const readyLines = sourcingLines.filter((line) => quotationLinesCoverRequirements(
+      [line], quotationLines.filter((quoteLine) => quoteLine.orderLineId === line.id),
+    ))
+    if (!readyLines.length) {
       return NextResponse.json({ error: "quotation-coverage-required" }, { status: 409 })
     }
-    const updatedSuborders = procurementSuborders.map((suborder) => (
-      suborder.id === currentSuborder.id
-        ? { ...suborder, status: "submitted" as const, submittedAt: now }
-        : suborder
-    ))
-    const allSubmitted = updatedSuborders.every((suborder) => suborder.status === "submitted")
-    const nextAssignee = allSubmitted
-      ? await firstUserWithRole("procurement_head")
-      : updatedSuborders.find((suborder) => suborder.status !== "submitted")?.specialistUserId
+    // A child is a real order: it never waits for its siblings to submit.
+    const nextAssignee = await activeUser(order.procurementHeadUserId) ?? await firstUserWithRole("procurement_head")
     if (!nextAssignee) return NextResponse.json({ error: "next-assignee-missing" }, { status: 409 })
-    updated = {
-      ...order,
-      procurementSuborders: updatedSuborders,
-      currentStep: allSubmitted ? "price_check" : "sourcing",
-      waitingForUserId: nextAssignee,
-      lastActorUserId: session.userId,
-      status: "in_progress",
-      workflowHistory: allSubmitted
-        ? appendHistory(order, "sourcing", "completed", session.userId, now)
-        : order.workflowHistory,
-    }
+    updated = advanceProcurementLines(order, readyLines.map((line) => line.id), "sourcing", "price_check", session.userId, nextAssignee, now)
     auditAction = "order.procurement_offers_submitted"
     metadata = {
       ...metadata,
       toStep: updated.currentStep,
-      procurementSuborderId: currentSuborder.id,
-      procurementSuborderNumber: currentSuborder.number,
-      allSubmitted,
+      orderLineIds: readyLines.map((line) => line.id),
     }
   } else if (action === "review-procurement-offers") {
     const approved = body?.approved === true
@@ -353,8 +327,7 @@ export async function POST(
         : []
     const permission = approved ? "approvals.approve" : "approvals.reject"
     if (
-      order.currentStep !== "price_check" ||
-      order.waitingForUserId !== session.userId ||
+      !getProcurementLinesAtStep(order, "price_check", session.userId).length ||
       !await hasRole(session.userId, "procurement_head") ||
       !await userHasPermission(session.userId, "procurement.select_supplier") ||
       !await userHasPermission(session.userId, permission) ||
@@ -374,46 +347,38 @@ export async function POST(
         item.quotation !== null && item.quotation.procurementCaseId === caseId
       ))
     const selectedQuotationIds = new Set(quotationIds)
-    const selectedQuotations = caseQuotations.filter((item) => selectedQuotationIds.has(item.id))
-    const requiredLines = order.lines.filter((line) => line.fulfillmentStatus === "needs_procurement")
+    const requiredLines = getProcurementLinesAtStep(order, "price_check", session.userId)
+    const reviewIds = new Set(requiredLines.map((line) => line.id))
+    const selectedQuotations = caseQuotations.filter((item) => selectedQuotationIds.has(item.id) && item.quotation.lines.some((line) => reviewIds.has(line.orderLineId)))
     if (approved && (
       !quotationIds.length ||
       selectedQuotations.length !== quotationIds.length ||
-      !quotationLinesCoverRequirements(requiredLines, selectedQuotations.flatMap((item) => item.quotation.lines), "exact")
+      !quotationLinesCoverRequirements(requiredLines, selectedQuotations.flatMap((item) => item.quotation.lines).filter((line) => reviewIds.has(line.orderLineId)), "exact")
     )) {
       return NextResponse.json({ error: "quotation-selection-invalid" }, { status: 409 })
     }
     if (approved) {
-      for (const quotation of caseQuotations) {
-        await db.update(appRecords).set({
-          payload: { ...quotation.payload, selected: selectedQuotationIds.has(quotation.id) },
-          updatedAt: now,
-        }).where(and(eq(appRecords.namespace, "quotations"), eq(appRecords.id, quotation.id)))
-      }
+      quotationUpdates = caseQuotations.map((quotation) => {
+        const previous = quotation.quotation.selectedLineIds ?? (quotation.quotation.selected ? quotation.quotation.lines.map((line) => line.orderLineId) : [])
+        const selectedLineIds = [...previous.filter((id) => !reviewIds.has(id)),
+          ...quotation.quotation.lines.filter((line) => reviewIds.has(line.orderLineId) && selectedQuotationIds.has(quotation.id)).map((line) => line.orderLineId)]
+        return { id: quotation.id, payload: { ...quotation.payload, selected: selectedLineIds.length > 0, selectedLineIds } }
+      })
     }
-    updated = {
-      ...order,
-      procurementReviewComment: approved ? undefined : comment,
-      procurementSuborders: approved
-        ? buildProcurementSuborders(order)
-        : buildProcurementSuborders(order).map((suborder) => ({
-            ...suborder,
-            status: "sourcing" as const,
-            submittedAt: undefined,
-          })),
-      currentStep: approved ? "director" : "sourcing",
-      waitingForUserId: nextAssignee,
-      lastActorUserId: session.userId,
-      status: "in_progress",
-      workflowHistory: appendHistory(order, "price_check", approved ? "approved" : "returned", session.userId, now),
-    }
+    updated = advanceProcurementLines(order, requiredLines.map((line) => line.id), "price_check", approved ? "director" : "sourcing", session.userId, nextAssignee, now, approved ? "approved" : "returned", approved ? undefined : comment)
     auditAction = approved ? "order.procurement_offer_approved" : "order.procurement_offer_returned"
     metadata = { ...metadata, toStep: updated.currentStep, quotationIds: approved ? quotationIds : undefined }
+  } else if (action === "reject-procurement-positions") {
+    const lines = getProcurementLinesAtStep(order, "director", session.userId)
+    if (!order.procurementProgress || !lines.length || !await userHasPermission(session.userId, "approvals.reject")) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    updated = advanceProcurementLines(order, lines.map((line) => line.id), "director", "complete", session.userId, undefined, now, "rejected")
+    auditAction = "order.positions_rejected"
+    metadata = { ...metadata, orderLineIds: lines.map((line) => line.id) }
   } else {
     return NextResponse.json({ error: "invalid-action" }, { status: 400 })
   }
 
-  if (!updated || !await persistOrder(id, row, updated, session.userId, auditAction, metadata)) {
+  if (!updated || !await persistOrder(id, row, updated, session.userId, auditAction, metadata, quotationUpdates)) {
     return NextResponse.json({ error: "order-changed" }, { status: 409 })
   }
   return NextResponse.json({ order: updated })

@@ -12,10 +12,12 @@ import {
 } from "@/lib/app-records"
 import {
   getAssignedProcurementLineIds,
+  getProcurementLinesAtStep,
   getProcurementSuborderForSpecialist,
   isOrderAssignedToProcurementSpecialist,
   type OrderRecord,
 } from "@/lib/orders"
+import { getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed } from "@/lib/procurement"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -82,6 +84,11 @@ export async function POST(
   if (!parsed) return NextResponse.json({ error: "invalid-record" }, { status: 400 })
 
   let payload = parsed.payload
+  // Financial snapshots and transitions are only created by the verified placement/workflow APIs.
+  if (auth.namespace === "finance-transactions" || (auth.namespace === "orders" && (payload.placement || payload.financeCancellation))) {
+    return NextResponse.json({ error: "use-finance-workflow" }, { status: 403 })
+  }
+  let quotationOrderVersion: { id: string; updatedAt: string } | undefined
   if (auth.namespace === "quotations") {
     const procurementCaseId = typeof payload.procurementCaseId === "string"
       ? payload.procurementCaseId
@@ -91,7 +98,7 @@ export async function POST(
       ? procurementCaseId.slice("procurement-".length)
       : ""
     const [orderRow] = orderId
-      ? await db.select({ payload: appRecords.payload })
+      ? await db.select({ payload: appRecords.payload, updatedAt: appRecords.updatedAt })
           .from(appRecords)
           .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, orderId)))
           .limit(1)
@@ -108,18 +115,29 @@ export async function POST(
         ? line.orderLineId
         : ""
     ))
+    const sourcingLines = order ? getProcurementLinesAtStep(order, "sourcing", auth.session.userId) : []
+    const sourcingIds = new Set(sourcingLines.map((line) => line.id))
     if (
       !order ||
-      order.currentStep !== "sourcing" ||
-      procurementSuborder?.status === "submitted" ||
+      order.procurementSplit ||
       !quotationLines.length ||
       new Set(submittedLineIds).size !== submittedLineIds.length ||
-      submittedLineIds.some((lineId) => !lineId || !assignedLineIds.has(lineId))
+      submittedLineIds.some((lineId) => !lineId || !assignedLineIds.has(lineId) || !sourcingIds.has(lineId))
     ) {
       return NextResponse.json({ error: "quotation-lines-forbidden" }, { status: 403 })
     }
+    if (quotationLines.some((line) => {
+      const required = sourcingLines.find((item) => item.id === line.orderLineId)
+      return !required || !Number.isFinite(line.quantity) || line.quantity <= 0 || line.quantity > getRequiredProcurementQuantity(required) ||
+        !Number.isFinite(line.unitPrice) || line.unitPrice <= 0 || typeof line.expectedDeliveryDate !== "string" || !isExpectedDeliveryDateAllowed(line.expectedDeliveryDate) ||
+        (line.paymentMethod !== undefined && line.paymentMethod !== "bank" && line.paymentMethod !== "cash")
+    })) return NextResponse.json({ error: "invalid-quotation-lines" }, { status: 400 })
+    quotationOrderVersion = { id: orderId, updatedAt: orderRow!.updatedAt }
     payload = {
       ...payload,
+      selected: false,
+      selectedLineIds: [],
+      lines: quotationLines.map((line) => ({ ...line, paymentMethod: line.paymentMethod ?? "bank" })),
       createdByUserId: auth.session.userId,
       procurementSuborderId: procurementSuborder?.id,
       procurementSuborderNumber: procurementSuborder?.number,
@@ -127,17 +145,25 @@ export async function POST(
   }
 
   try {
-    await db.insert(appRecords).values({
+    await db.transaction(async (tx) => {
+      if (quotationOrderVersion) {
+        const locked = await tx.update(appRecords).set({ updatedAt: new Date().toISOString() })
+          .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, quotationOrderVersion.id), eq(appRecords.updatedAt, quotationOrderVersion.updatedAt)))
+        if (locked.rowsAffected !== 1) throw new Error("order-changed")
+      }
+      await tx.insert(appRecords).values({
       namespace: auth.namespace,
       id: parsed.id,
       payload,
       createdByUserId: auth.session.userId,
+    })
     })
   } catch (error) {
     const message = error instanceof Error ? error.message.toLocaleLowerCase() : ""
     if (message.includes("unique constraint failed")) {
       return NextResponse.json({ error: "record-exists" }, { status: 409 })
     }
+    if (message === "order-changed") return NextResponse.json({ error: "order-changed" }, { status: 409 })
     return NextResponse.json({ error: "create-failed" }, { status: 500 })
   }
 

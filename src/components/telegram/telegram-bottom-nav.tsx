@@ -3,13 +3,16 @@
 import * as React from "react"
 import Link, { useLinkStatus } from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { BellIcon, ClipboardListIcon, Clock3Icon, LoaderCircleIcon, SettingsIcon } from "lucide-react"
+import { BanknoteIcon, BellIcon, ClipboardListIcon, Clock3Icon, LoaderCircleIcon, SettingsIcon } from "lucide-react"
+import { useAuthorization } from "@/components/auth/use-authorization"
+import { messages } from "@/lib/i18n"
 
 import type { Locale } from "@/lib/i18n"
 import type { TelegramCopy } from "@/lib/telegram-copy"
 import { cn } from "@/lib/utils"
 
 export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: TelegramCopy }) {
+  const { canViewFinance } = useAuthorization()
   const pathname = usePathname()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -18,6 +21,7 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
   const items = [
     { href: `/${lang}/telegram/orders`, label: copy.orders, icon: ClipboardListIcon, active: pathname.includes("/orders") && !waitingContext },
     { href: `/${lang}/telegram/orders?scope=waiting`, label: copy.waiting, icon: Clock3Icon, active: pathname.includes("/orders") && waitingContext },
+    ...(canViewFinance ? [{ href: `/${lang}/telegram/finance`, label: messages[lang].finance, icon: BanknoteIcon, active: pathname.includes("/finance") }] : []),
     { href: `/${lang}/telegram/notifications`, label: copy.notifications, icon: BellIcon, active: pathname.includes("/notifications") },
     { href: `/${lang}/telegram/settings`, label: copy.settings, icon: SettingsIcon, active: pathname.includes("/settings") },
   ]
@@ -31,7 +35,7 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
 
   return (
     <nav aria-label="Telegram Mini App" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[560px] border-t border-[var(--tg-border)] bg-[color-mix(in_srgb,var(--tg-card)_95%,transparent)] pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-2px_14px_-8px_rgba(16,30,60,0.22)] backdrop-blur-md">
-      <div className="grid h-16 grid-cols-4 px-2">
+      <div className={cn("grid h-16 px-2", canViewFinance ? "grid-cols-5" : "grid-cols-4")}>
         {items.map((item) => {
           const Icon = item.icon
           return (

@@ -20,12 +20,13 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Locale, Messages } from "@/lib/i18n"
-import { canUserViewRejectedOrder, isOrderAssignedToProcurementSpecialist, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
+import { canUserViewRejectedOrder, isOperationalOrder, isOrderAssignedToProcurementSpecialist, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
 export function DashboardOverview({ lang, messages }: { lang: Locale; messages: Messages }) {
-  const { orders } = useOrders()
+  const { orders: allOrders } = useOrders()
+  const orders = allOrders.filter(isOperationalOrder)
   const { data } = useSettings()
   const { can, canViewOrders, canViewSettingsSection, currentUser } = useAuthorization()
   const ownOnly = !can("requests.view") && can("requests.view_own")

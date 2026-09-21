@@ -4,6 +4,7 @@ import * as React from "react"
 import { CheckIcon, UserRoundIcon } from "lucide-react"
 
 import { useProcurement } from "@/components/procurement/procurement-provider"
+import { useOrders } from "@/components/orders/orders-provider"
 import { useSettings } from "@/components/settings/settings-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -31,6 +32,7 @@ export function ProcurementLineAssignment({
 }) {
   const { data, currentUserId } = useSettings()
   const { cases, assignSpecialist } = useProcurement()
+  const { orders } = useOrders()
   const copy = assignmentCopy(lang)
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const specialists = data.users.filter(
@@ -48,6 +50,8 @@ export function ProcurementLineAssignment({
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState("")
   const effectiveSpecialistId = specialistId || specialists[0]?.id || ""
+  const assignmentLocked = (userId: string) => orders.some((child) => child.parentOrderId === order.id &&
+    child.procurementSpecialistUserId === userId && (child.currentStep !== "sourcing" || child.status === "rejected"))
 
   const workloadFor = (userId: string) => cases.filter(
     (item) => item.stage !== "approved" && (item.assigneeIds ?? (item.assigneeId ? [item.assigneeId] : [])).includes(userId),
@@ -87,7 +91,7 @@ export function ProcurementLineAssignment({
         </Badge>
       </div>
 
-      {suborders.length ? (
+      {suborders.length && !order.procurementSplit ? (
         <div className="space-y-2 rounded-lg border bg-muted/20 p-3" role="status">
           <p className="text-xs font-medium text-muted-foreground">{copy.splitOrders}</p>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -168,7 +172,7 @@ export function ProcurementLineAssignment({
               className="min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {specialists.map((specialist) => (
-                <option key={specialist.id} value={specialist.id}>
+                <option key={specialist.id} value={specialist.id} disabled={assignmentLocked(specialist.id)}>
                   {specialist.fullName} — {copy.workload(workloadFor(specialist.id))}
                 </option>
               ))}
@@ -177,7 +181,7 @@ export function ProcurementLineAssignment({
           <Button
             type="button"
             className="w-full sm:w-auto"
-            disabled={!effectiveSpecialistId || !selectedLineIds.length || saving}
+            disabled={!effectiveSpecialistId || !selectedLineIds.length || saving || assignmentLocked(effectiveSpecialistId)}
             onClick={saveAssignment}
           >
             <UserRoundIcon aria-hidden="true" />
@@ -186,6 +190,9 @@ export function ProcurementLineAssignment({
         </div>
       ) : null}
       {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+      {unassignedLines.length > 0 && assignmentLocked(effectiveSpecialistId) ? <p className="text-sm text-muted-foreground" role="status">
+        {lang === "ru" ? "Заказ этого специалиста уже отправлен. Верните его на доработку перед добавлением позиций." : lang === "tr" ? "Bu uzmanın siparişi gönderildi. Kalem eklemek için önce düzeltmeye iade edin." : "Bu xodim buyurtmasini yuborgan. Pozitsiya qo‘shish uchun uni avval qayta ishlashga qaytaring."}
+      </p> : null}
     </section>
   )
 }

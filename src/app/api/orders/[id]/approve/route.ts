@@ -13,8 +13,16 @@ import {
 } from "@/db/schema"
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
+import { validateOrderPayments } from "@/lib/order-payment"
+import { readOrderPaymentForm } from "@/lib/order-payment-form"
+import { paymentsForOrder } from "@/lib/finance-workflow"
+import type { QuotationRecord } from "@/lib/procurement"
 import {
   buildApprovedOrder,
+  advanceProcurementLines,
+  getOrderActionView,
+  getProcurementLinesAtStep,
+  getAssignedProcurementLineIds,
   getNextWorkflowStep,
   getProcurementSpecialistIds,
   workflowSteps,
@@ -89,7 +97,7 @@ async function resolveAssignee(step: WorkflowStep, order: OrderRecord) {
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: RouteContext<"/api/orders/[id]/approve">,
 ) {
   const session = await getSessionUser()
@@ -108,7 +116,12 @@ export async function POST(
     return NextResponse.json({ error: "order-not-found" }, { status: 404 })
   }
 
-  const order = row.payload
+  const storedOrder = row.payload
+  const wantsPlacement = request.headers.get("content-type")?.startsWith("multipart/form-data")
+  if (wantsPlacement && !getProcurementLinesAtStep(storedOrder, "procurement_order", session.userId).length) {
+    return NextResponse.json({ error: "not-current-assignee" }, { status: 403 })
+  }
+  const order: OrderRecord = wantsPlacement ? { ...storedOrder, currentStep: "procurement_order", waitingForUserId: session.userId } : getOrderActionView(storedOrder, session.userId)
   if (order.waitingForUserId !== session.userId) {
     return NextResponse.json({ error: "not-current-assignee" }, { status: 403 })
   }
@@ -123,25 +136,77 @@ export async function POST(
   if (order.currentStep === "complete") {
     return NextResponse.json({ error: "order-complete" }, { status: 409 })
   }
+  let paymentForm: Awaited<ReturnType<typeof readOrderPaymentForm>> | undefined
+  if (order.currentStep === "procurement_order") {
+    if (!await userHasPermission(session.userId, "procurement.quote") || !getAssignedProcurementLineIds(order, session.userId).length) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    }
+    try { paymentForm = await readOrderPaymentForm(request) } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "invalid-payment" }, { status: 400 })
+    }
+  }
   const nextStep = getNextWorkflowStep(order.currentStep)
   const nextAssigneeUserId = await resolveAssignee(nextStep, order)
   const updatedAt = new Date().toISOString()
-  const updated = buildApprovedOrder(
+  const approvedOrder = buildApprovedOrder(
     order,
     session.userId,
     nextAssigneeUserId,
     completesOperationalTask,
     updatedAt,
   )
-  if (!updated) {
+  if (!approvedOrder) {
     return NextResponse.json({
       error: nextStep !== "complete" && !nextAssigneeUserId
         ? "next-assignee-missing"
         : "invalid-transition",
     }, { status: 409 })
   }
+  let updated: OrderRecord = approvedOrder
 
-  const result = await db.update(appRecords)
+  if (storedOrder.procurementProgress && !paymentForm && ["director", "warehouse_receipt"].includes(order.currentStep)) {
+    const step = order.currentStep as "director" | "warehouse_receipt"
+    const lineIds = getProcurementLinesAtStep(storedOrder, step, session.userId).map((line) => line.id)
+    updated = advanceProcurementLines(storedOrder, lineIds, step, step === "director" ? "procurement_order" : "complete", session.userId, nextAssigneeUserId, updatedAt, completesOperationalTask ? "completed" : "approved")
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      if (paymentForm) {
+        const quotationRows = await tx.select({ payload: appRecords.payload }).from(appRecords)
+          .where(eq(appRecords.namespace, "quotations"))
+        const lines = validateOrderPayments(order, quotationRows.map((item) => item.payload as unknown as QuotationRecord), paymentForm.input)
+        const allowed = new Set(getProcurementLinesAtStep(storedOrder, "procurement_order", session.userId).map((line) => line.id))
+        const assigned = new Set(getAssignedProcurementLineIds(storedOrder, session.userId))
+        if (lines.some((line) => !allowed.has(line.orderLineId) || !assigned.has(line.orderLineId))) throw new Error("invalid-payment-position")
+        for (const supplierId of new Set(lines.map((line) => line.supplierId))) {
+          const [supplier] = await tx.select().from(appRecords).where(and(eq(appRecords.namespace, "suppliers"), eq(appRecords.id, supplierId)))
+          if (!supplier) throw new Error("supplier-not-found")
+          const supplierLines = lines.filter((line) => line.supplierId === supplierId)
+          const savedInn = typeof supplier.payload.inn === "string" ? supplier.payload.inn.trim() : ""
+          const suppliedInns = supplierLines.map((line) => typeof line.supplierInn === "string" ? line.supplierInn.trim() : "")
+          const inn = savedInn || suppliedInns[0]
+          if (!inn || inn.length > 64 || /[\u0000-\u001f]/.test(inn) || suppliedInns.some((value) => value && value !== inn)) throw new Error(savedInn ? "supplier-inn-locked" : "supplier-inn-required")
+          if (!savedInn) await tx.update(appRecords).set({ payload: { ...supplier.payload, inn }, updatedAt })
+            .where(and(eq(appRecords.namespace, "suppliers"), eq(appRecords.id, supplierId)))
+          for (const line of supplierLines) { line.supplierInn = inn; line.placedAt = updatedAt; line.placedByUserId = session.userId }
+        }
+        for (const file of paymentForm.files) {
+          const fileId = randomUUID()
+          const targets = file.supplierWide ? lines.filter((line) => line.supplierId === lines[file.index].supplierId) : [lines[file.index]]
+          if (targets.some((line) => line.contract)) throw new Error("invalid-contract-file")
+          for (const line of targets) line.contract = { id: fileId, name: file.name, type: file.type, size: file.size }
+          // Private namespace, excluded from generic record APIs. File and transition commit together.
+          await tx.insert(appRecords).values({ namespace: "order-contracts", id: fileId,
+            createdByUserId: session.userId, payload: { orderId: id, name: file.name, base64: file.base64 } })
+        }
+        updated = advanceProcurementLines(storedOrder, [...new Set(lines.map((line) => line.orderLineId))], "procurement_order", "warehouse_receipt", session.userId, nextAssigneeUserId, updatedAt)
+        updated.placement = { createdAt: storedOrder.placement?.createdAt ?? updatedAt, createdByUserId: storedOrder.placement?.createdByUserId ?? session.userId, lines: [...(storedOrder.placement?.lines ?? []), ...lines] }
+        const newPayments = paymentsForOrder({ ...updated, placement: { createdAt: updatedAt, createdByUserId: session.userId, lines } })
+        for (const payment of newPayments) await tx.insert(appRecords).values({ namespace: "finance-payments", id: payment.id,
+          payload: payment as unknown as Record<string, unknown>, createdByUserId: session.userId, updatedAt })
+      }
+      const result = await tx.update(appRecords)
     .set({
       payload: updated as unknown as Record<string, unknown>,
       updatedAt,
@@ -151,18 +216,22 @@ export async function POST(
       eq(appRecords.id, id),
       eq(appRecords.updatedAt, row.updatedAt),
     ))
-  if (result.rowsAffected !== 1) {
-    return NextResponse.json({ error: "order-changed" }, { status: 409 })
+      if (result.rowsAffected !== 1) throw new Error("order-changed")
+    })
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "save-failed"
+    const validationErrors = ["invalid-contract-file", "supplier-not-found", "supplier-inn-locked", "supplier-inn-required", "approved-offers-incomplete", "payment-lines-required", "invalid-payment", "invalid-payment-position", "invalid-payment-method", "invalid-prepayment", "invalid-payment-date", "payment-date-required", "invalid-contract-number"]
+    return NextResponse.json({ error: reason === "order-changed" || validationErrors.includes(reason) ? reason : "save-failed" }, { status: reason === "order-changed" ? 409 : validationErrors.includes(reason) ? 400 : 500 })
   }
 
   try {
     await db.insert(auditEvents).values({
       id: randomUUID(),
       actorUserId: session.userId,
-      action: completesOperationalTask ? "order.step_completed" : "order.approved",
+      action: paymentForm ? "order.placed" : completesOperationalTask ? "order.step_completed" : "order.approved",
       entityType: "order",
       entityId: id,
-      metadata: { fromStep: order.currentStep, toStep: updated.currentStep },
+      metadata: { fromStep: order.currentStep, toStep: nextStep, aggregateStep: updated.currentStep, orderLineIds: updated.workflowHistory?.at(-1)?.orderLineIds },
     })
   } catch {
     // The order transition is authoritative even if non-critical auditing is unavailable.

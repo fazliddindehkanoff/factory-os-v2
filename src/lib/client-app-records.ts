@@ -21,10 +21,11 @@ export async function loadAppRecords<T extends { id: string }>(namespace: string
   return result.records
 }
 
-export async function approveOrderRecord<T extends { id: string }>(orderId: string): Promise<T> {
+export async function approveOrderRecord<T extends { id: string }>(orderId: string, paymentForm?: FormData): Promise<T> {
   const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/approve`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: paymentForm ? undefined : { "Content-Type": "application/json" },
+    body: paymentForm,
   })
   const result = await response.json().catch(() => ({})) as { order?: T; error?: string }
   if (!response.ok || !result.order) throw new Error(result.error ?? "approval-failed")
@@ -35,13 +36,15 @@ export async function runOrderWorkflowAction<T extends { id: string }>(
   orderId: string,
   action: string,
   input: Record<string, unknown> = {},
+  onRelatedOrders?: (orders: T[]) => void,
 ): Promise<T> {
   const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}/workflow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, ...input }),
   })
-  const result = await response.json().catch(() => ({})) as { order?: T; error?: string }
+  const result = await response.json().catch(() => ({})) as { order?: T; relatedOrders?: T[]; error?: string }
   if (!response.ok || !result.order) throw new Error(result.error ?? "workflow-action-failed")
+  onRelatedOrders?.(result.relatedOrders ?? [])
   return result.order
 }

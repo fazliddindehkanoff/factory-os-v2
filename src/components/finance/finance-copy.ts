@@ -1,0 +1,36 @@
+export const financeCopy = {
+  uz: {
+    title: "Moliya", flow: "Ta’minot rahbari → Direktor → Moliyachi", all: "Barchasi", mine: "Meni kutayotganlar", search: "Buyurtma, yetkazib beruvchi yoki INN…",
+    stages: { head_review: "Ta’minot rahbarida", director_review: "Direktorda", payment: "To‘lov kutilmoqda", returned: "Qayta ko‘rish", paid: "To‘landi", cancelled: "Bekor qilindi" },
+    actions: { approve: "Tasdiqlash", return: "Qayta ko‘rishga", cancel: "Bekor qilish", paid: "To‘landi", resubmit: "Qayta yuborish" },
+    advance: "Avans", balance: "Qoldiq", amount: "Summa", supplier: "Yetkazib beruvchi", order: "Buyurtma", status: "Holat", details: "Batafsil", close: "Yopish", confirm: "Tasdiqlayman",
+    selected: "Tanlangan", selectAll: "Ko‘rinayotganlarni tanlash", select: "Tanlash", clear: "Tanlovni tozalash", empty: "Bu ro‘yxatda to‘lovlar yo‘q", loading: "Yuklanmoqda…", refresh: "Yangilash",
+    error: "Amal bajarilmadi. Ma’lumotni yangilang va qayta urinib ko‘ring.", changed: "Ma’lumot o‘zgargan. Ro‘yxatni yangilab, qayta tanlang.", success: "Saqlandi", comment: "Izoh", required: "Izoh kiritish shart", method: "To‘lov shakli", bank: "Bank o‘tkazmasi", cash: "Naqd", dueDate: "To‘lov muddati", contract: "Shartnoma raqami", history: "Tarix", products: "Mahsulotlar", specialist: "Rasmiylashtirgan", inn: "INN",
+    cancelWarning: "Tanlangan to‘lovlarga tegishli buyurtmalar ham bekor qilinadi. Ularning barcha tugallanmagan to‘lovlari yopiladi. Oldin to‘langan summalar qaytarilmaydi. Boshqa /1, /2 buyurtmalar o‘zgarmaydi.",
+    paidWarning: "Haqiqatan amalga oshirilgan to‘lovni tasdiqlang. Bu amal pul o‘tkazmaydi.", returnWarning: "Izoh bilan buyurtmani rasmiylashtirgan ta’minotchiga qaytariladi.", approveWarning: "Tanlangan to‘lovlar keyingi bosqichga o‘tadi.", correction: "To‘lov shartlarini tuzating va izoh bilan qayta yuboring. Summa va INN tasdiqlangan buyurtmadan olinadi.",
+    noAccess: "Moliya bo‘limiga kirish ruxsati yo‘q", pending: "Kutilayotgan summa", count: "ta to‘lov", mixed: "Tanlangan to‘lovlar uchun umumiy amal yo‘q. Bir bosqichdagi to‘lovlarni tanlang.",
+  },
+  ru: {
+    title: "Финансы", flow: "Руководитель снабжения → Директор → Финансист", all: "Все", mine: "Ожидают меня", search: "Заявка, поставщик или ИНН…",
+    stages: { head_review: "У руководителя снабжения", director_review: "У директора", payment: "Ожидает оплаты", returned: "На доработке", paid: "Оплачено", cancelled: "Отменено" },
+    actions: { approve: "Согласовать", return: "На доработку", cancel: "Отменить", paid: "Оплачено", resubmit: "Отправить повторно" },
+    advance: "Аванс", balance: "Остаток", amount: "Сумма", supplier: "Поставщик", order: "Заявка", status: "Статус", details: "Подробнее", close: "Закрыть", confirm: "Подтверждаю",
+    selected: "Выбрано", selectAll: "Выбрать видимые", select: "Выбрать", clear: "Снять выбор", empty: "В этом списке нет платежей", loading: "Загрузка…", refresh: "Обновить",
+    error: "Не удалось выполнить действие. Обновите данные и повторите попытку.", changed: "Данные изменились. Обновите список и выберите платежи заново.", success: "Сохранено", comment: "Комментарий", required: "Комментарий обязателен", method: "Форма оплаты", bank: "Банковский перевод", cash: "Наличные", dueDate: "Срок оплаты", contract: "Номер договора", history: "История", products: "Товары", specialist: "Оформил", inn: "ИНН",
+    cancelWarning: "Заявки выбранных платежей тоже будут отменены вместе со всеми незавершёнными платежами. Оплаченные суммы не возвращаются. Другие заявки /1, /2 не изменятся.",
+    paidWarning: "Подтвердите фактически совершённый платёж. Это действие не переводит деньги.", returnWarning: "Возвращается оформившему снабженцу с комментарием.", approveWarning: "Выбранные платежи перейдут на следующий этап.", correction: "Исправьте условия оплаты и отправьте повторно с комментарием. Сумма и ИНН взяты из согласованной заявки.",
+    noAccess: "Нет доступа к финансам", pending: "Ожидающая сумма", count: "платежей", mixed: "Нет общего действия. Выберите платежи одного этапа.",
+  },
+  tr: {
+    title: "Finans", flow: "Satın alma yöneticisi → Direktör → Finans uzmanı", all: "Tümü", mine: "Beni bekleyenler", search: "Talep, tedarikçi veya vergi numarası…",
+    stages: { head_review: "Satın alma yöneticisinde", director_review: "Direktörde", payment: "Ödeme bekliyor", returned: "Düzeltme bekliyor", paid: "Ödendi", cancelled: "İptal edildi" },
+    actions: { approve: "Onayla", return: "Düzeltmeye gönder", cancel: "İptal et", paid: "Ödendi", resubmit: "Yeniden gönder" },
+    advance: "Avans", balance: "Kalan", amount: "Tutar", supplier: "Tedarikçi", order: "Talep", status: "Durum", details: "Ayrıntılar", close: "Kapat", confirm: "Onaylıyorum",
+    selected: "Seçilen", selectAll: "Görünenleri seç", select: "Seç", clear: "Seçimi kaldır", empty: "Bu listede ödeme yok", loading: "Yükleniyor…", refresh: "Yenile",
+    error: "İşlem başarısız. Verileri yenileyip tekrar deneyin.", changed: "Veriler değişti. Listeyi yenileyip tekrar seçin.", success: "Kaydedildi", comment: "Yorum", required: "Yorum gerekli", method: "Ödeme şekli", bank: "Banka havalesi", cash: "Nakit", dueDate: "Ödeme tarihi", contract: "Sözleşme numarası", history: "Geçmiş", products: "Ürünler", specialist: "Düzenleyen", inn: "Vergi numarası",
+    cancelWarning: "Seçilen ödemelerin talepleri ve tamamlanmamış ödemeleri de iptal edilir. Ödenen tutarlar iade edilmez. Diğer /1, /2 talepleri değişmez.",
+    paidWarning: "Gerçekleşen ödemeyi onaylayın. Bu işlem para transferi yapmaz.", returnWarning: "Düzenleyen satın alma uzmanına yorumla iade edilir.", approveWarning: "Seçilen ödemeler sonraki aşamaya geçer.", correction: "Ödeme koşullarını düzeltip yorumla yeniden gönderin. Tutar ve vergi numarası onaylı talepten alınır.",
+    noAccess: "Finans erişimi yok", pending: "Bekleyen tutar", count: "ödeme", mixed: "Ortak işlem yok. Aynı aşamadaki ödemeleri seçin.",
+  },
+}
+export type FinanceCopy = typeof financeCopy.uz

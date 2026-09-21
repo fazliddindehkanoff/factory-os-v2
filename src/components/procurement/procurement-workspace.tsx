@@ -154,7 +154,7 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
       ? order.lines.filter((line) => assignments[line.id] === currentUser?.id)
       : order.lines
 
-    return visibleLines
+    return visibleLines.filter((line) => !order.procurementSplit || !assignments[line.id])
       .map((line) => {
         const assigneeId = assignments[line.id]
         const assignee = data.users.find((item) => item.id === assigneeId)

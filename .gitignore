@@ -22,6 +22,7 @@ pnpm-debug.log*
 .vercel
 .playwright-cli
 /output/playwright
+/artifacts/screenshots/
 
 # Local SQLite databases
 /data/*.db

@@ -1,4 +1,11 @@
+import type { OrderPlacement } from "./order-payment"
+
 export type OrderType = "material" | "service"
+
+// This is navigation visibility, not a replacement for order access checks.
+export function canViewParentOrderLink(roleCodes: readonly string[]) {
+  return roleCodes.includes("procurement_manager")
+}
 export type OrderStatus = "supervisor_review" | "warehouse_check" | "in_progress" | "fulfilled" | "approved" | "rejected" | "draft"
 export type UrgencyLevel = "normal" | "high" | "urgent" | "critical"
 export const workflowSteps = [
@@ -39,6 +46,7 @@ export function truncateLabel(value: string, maxLength = 40) {
 }
 
 export type WorkflowHistoryEntry = {
+  orderLineIds?: string[]
   step: Exclude<WorkflowStep, "complete">
   action: "approved" | "completed" | "rejected" | "returned" | "skipped"
   actorUserId?: string
@@ -211,10 +219,74 @@ export type OrderRecord = {
   procurementSpecialistUserId?: string
   procurementLineAssignments?: Record<string, string>
   procurementSuborders?: ProcurementSuborder[]
+  /** Allocation container only; its children have independent workflows. */
+  procurementSplit?: boolean
+  parentOrderId?: string
+  parentOrderNumber?: string
+  procurementHeadUserId?: string
   procurementReviewComment?: string
+  placement?: OrderPlacement
+  financeCancellation?: { actorUserId: string; createdAt: string; comment: string }
+  /** Independent procurement workflow for positions within this same order. */
+  procurementProgress?: Record<string, ProcurementLineProgress>
   lastActorUserId: string
   createdAt: string
   workflowHistory?: WorkflowHistoryEntry[]
+}
+
+export type ProcurementLineProgress = {
+  step: "sourcing" | "price_check" | "director" | "procurement_order" | "warehouse_receipt" | "complete"
+  waitingForUserId?: string
+  reviewComment?: string
+  rejected?: boolean
+}
+
+export function getProcurementLinesAtStep(
+  order: Pick<OrderRecord, "lines" | "currentStep" | "waitingForUserId" | "procurementProgress" | "procurementLineAssignments" | "procurementSpecialistUserId" | "procurementSuborders">,
+  step: ProcurementLineProgress["step"],
+  userId?: string,
+) {
+  return order.lines.filter((line) => {
+    if (line.fulfillmentStatus !== "needs_procurement") return false
+    const state = order.procurementProgress?.[line.id]
+    if (!state && step === "sourcing" && userId) return order.currentStep === "sourcing" &&
+      (order.procurementLineAssignments?.[line.id] ?? order.procurementSpecialistUserId ?? order.waitingForUserId) === userId &&
+      order.procurementSuborders?.find((item) => item.specialistUserId === userId)?.status !== "submitted"
+    return (state?.step ?? order.currentStep) === step &&
+      (!userId || (state ? state.waitingForUserId : order.waitingForUserId) === userId)
+  })
+}
+
+/** Choose the user's most advanced actionable lane, without hiding other lines. */
+export function getOrderActionView(order: OrderRecord, userId?: string): OrderRecord {
+  if (!order.procurementProgress || !userId) return order
+  const states = Object.values(order.procurementProgress).filter((state) => state.step !== "complete" && state.waitingForUserId === userId)
+    .sort((a, b) => workflowSteps.indexOf(b.step as (typeof workflowSteps)[number]) - workflowSteps.indexOf(a.step as (typeof workflowSteps)[number]))
+  if (!states.length) return order
+  return { ...order, currentStep: states[0].step, waitingForUserId: userId,
+    procurementReviewComment: states.find((state) => state.reviewComment)?.reviewComment }
+}
+
+export function advanceProcurementLines(
+  order: OrderRecord, lineIds: string[], fromStep: ProcurementLineProgress["step"],
+  toStep: ProcurementLineProgress["step"], actorUserId: string, nextUserId: string | undefined,
+  now: string, action: WorkflowHistoryEntry["action"] = "completed", reviewComment?: string,
+): OrderRecord {
+  const eligible = new Set(getProcurementLinesAtStep(order, fromStep, actorUserId).map((line) => line.id))
+  if (!lineIds.length || new Set(lineIds).size !== lineIds.length || lineIds.some((id) => !eligible.has(id)) ||
+    (toStep !== "complete" && !nextUserId) || order.procurementSplit) throw new Error("invalid-position-transition")
+  const progress = Object.fromEntries(getRequiredProcurementLines(order).map((line) => [line.id,
+    order.procurementProgress?.[line.id] ?? { step: order.currentStep as ProcurementLineProgress["step"], waitingForUserId: order.currentStep === "sourcing" ? getProcurementLineAssignments(order)[line.id] ?? order.waitingForUserId : order.waitingForUserId },
+  ]))
+  for (const id of lineIds) progress[id] = { step: toStep, waitingForUserId: nextUserId, reviewComment, rejected: action === "rejected" }
+  const active = Object.values(progress).filter((state) => state.step !== "complete")
+    .sort((a, b) => workflowSteps.indexOf(a.step as (typeof workflowSteps)[number]) - workflowSteps.indexOf(b.step as (typeof workflowSteps)[number]))
+  return { ...order, procurementProgress: progress, procurementSuborders: undefined,
+    currentStep: active[0]?.step ?? "complete", waitingForUserId: active[0]?.waitingForUserId,
+    status: active.length ? "in_progress" : Object.values(progress).every((state) => state.rejected) ? "rejected" : "approved",
+    lastActorUserId: actorUserId, procurementReviewComment: undefined,
+    workflowHistory: [...(order.workflowHistory ?? []), { step: fromStep as WorkflowHistoryEntry["step"], action, actorUserId, createdAt: now, orderLineIds: lineIds }],
+  }
 }
 
 export type ProcurementSuborder = {
@@ -270,10 +342,24 @@ export function buildProcurementSuborders(
     | "procurementLineAssignments"
     | "procurementSpecialistUserId"
     | "procurementSuborders"
+    | "parentOrderId"
+    | "procurementSplit"
+    | "currentStep"
   >,
   createdAt = order.createdAt,
 ) {
   const assignments = getProcurementLineAssignments(order)
+  if (order.parentOrderId && order.procurementSpecialistUserId) {
+    return [{
+      id: order.id,
+      number: order.number,
+      suffix: Number(order.number.split("/").at(-1)),
+      specialistUserId: order.procurementSpecialistUserId,
+      orderLineIds: getRequiredProcurementLines(order).map((line) => line.id),
+      status: order.currentStep === "sourcing" ? "sourcing" as const : "submitted" as const,
+      createdAt: order.createdAt,
+    }] satisfies ProcurementSuborder[]
+  }
   const existing = Array.isArray(order.procurementSuborders)
     ? order.procurementSuborders
     : []
@@ -339,9 +425,99 @@ export function getProcurementSuborderForSpecialist(
   userId?: string,
 ) {
   if (!userId) return undefined
+  if (order.procurementSplit) return undefined
   return buildProcurementSuborders(order).find(
     (suborder) => suborder.specialistUserId === userId,
   )
+}
+
+/** Root containers remain available for history, but are not counted twice. */
+export function isOperationalOrder(order: OrderRecord) {
+  return !order.procurementSplit || getUnassignedProcurementLines(order).length > 0
+}
+
+export function createProcurementChild(
+  parent: OrderRecord,
+  suborder: ProcurementSuborder,
+  headUserId: string,
+): OrderRecord {
+  const sourcing = ["procurement_accept", "sourcing"].includes(parent.currentStep)
+  const submitted = sourcing && suborder.status === "submitted"
+  const currentStep = sourcing ? submitted ? "price_check" : "sourcing" : parent.currentStep
+  const history = [...(parent.workflowHistory ?? [])]
+  if (!history.some((entry) => entry.step === "procurement_accept" && entry.action === "completed")) {
+    history.push({ step: "procurement_accept", action: "completed", actorUserId: headUserId, createdAt: suborder.createdAt })
+  }
+  if (submitted && !history.some((entry) => entry.step === "sourcing" && entry.action === "completed")) {
+    history.push({ step: "sourcing", action: "completed", actorUserId: suborder.specialistUserId, createdAt: suborder.submittedAt ?? suborder.createdAt })
+  }
+  return {
+    ...parent,
+    id: suborder.id,
+    number: suborder.number,
+    parentOrderId: parent.id,
+    parentOrderNumber: parent.number,
+    procurementHeadUserId: headUserId,
+    procurementSplit: undefined,
+    procurementSuborders: undefined,
+    procurementSpecialistUserId: suborder.specialistUserId,
+    procurementLineAssignments: Object.fromEntries(suborder.orderLineIds.map((id) => [id, suborder.specialistUserId])),
+    lines: parent.lines.filter((line) => suborder.orderLineIds.includes(line.id)),
+    comments: [],
+    currentStep,
+    status: sourcing ? "in_progress" : parent.status,
+    waitingForUserId: ["sourcing", "procurement_order"].includes(currentStep)
+      ? suborder.specialistUserId
+      : submitted ? headUserId : parent.waitingForUserId,
+    createdAt: suborder.createdAt,
+    workflowHistory: history,
+  }
+}
+
+/** Pure assignment plan; the API commits parent and child in one transaction. */
+export function planProcurementAssignment(
+  parent: OrderRecord,
+  children: OrderRecord[],
+  specialistUserId: string,
+  orderLineIds: string[],
+  headUserId: string,
+  now: string,
+) {
+  if (parent.parentOrderId || !["procurement_accept", "sourcing"].includes(parent.currentStep)) {
+    throw new Error("procurement-assignment-forbidden")
+  }
+  const unassigned = new Set(getUnassignedProcurementLines(parent).map((line) => line.id))
+  if (!orderLineIds.length || orderLineIds.some((id) => !unassigned.has(id))) {
+    throw new Error("procurement-lines-already-assigned")
+  }
+  const existingChild = children.find((child) => child.procurementSpecialistUserId === specialistUserId)
+  if (existingChild && (existingChild.currentStep !== "sourcing" || existingChild.status === "rejected")) {
+    throw new Error("procurement-child-already-submitted")
+  }
+  const assignments = { ...getProcurementLineAssignments(parent), ...Object.fromEntries(orderLineIds.map((id) => [id, specialistUserId])) }
+  const updated: OrderRecord = {
+    ...parent,
+    procurementSplit: true,
+    procurementHeadUserId: headUserId,
+    procurementSpecialistUserId: undefined,
+    procurementLineAssignments: assignments,
+    currentStep: "procurement_accept",
+    status: "in_progress",
+    waitingForUserId: headUserId,
+    lastActorUserId: headUserId,
+  }
+  updated.procurementSuborders = buildProcurementSuborders(updated, now)
+  const descriptor = updated.procurementSuborders.find((item) => item.specialistUserId === specialistUserId)!
+  const child = existingChild ? {
+    ...existingChild,
+    lines: parent.lines.filter((line) => descriptor.orderLineIds.includes(line.id)),
+    procurementLineAssignments: Object.fromEntries(descriptor.orderLineIds.map((id) => [id, specialistUserId])),
+    procurementProgress: existingChild.procurementProgress ? {
+      ...existingChild.procurementProgress,
+      ...Object.fromEntries(orderLineIds.map((id) => [id, { step: "sourcing" as const, waitingForUserId: specialistUserId }])),
+    } : undefined,
+  } : createProcurementChild(updated, descriptor, headUserId)
+  return { parent: updated, child }
 }
 
 export function getUnassignedProcurementLines(
@@ -384,6 +560,7 @@ export function buildApprovedOrder(
   createdAt = new Date().toISOString(),
 ) {
   if (
+    order.procurementSplit ||
     order.waitingForUserId !== actorUserId ||
     order.currentStep === "complete" ||
     nonApprovalWorkflowSteps.has(order.currentStep)
@@ -441,12 +618,18 @@ export function resolveOrderApplicantId(
 export function isOrderWaitingForUser(
   order: Pick<
     OrderRecord,
-    "currentStep" | "waitingForUserId" | "lines" | "procurementLineAssignments" | "procurementSpecialistUserId" | "procurementSuborders"
+    "currentStep" | "waitingForUserId" | "lines" | "procurementLineAssignments" | "procurementSpecialistUserId" | "procurementSuborders" | "procurementSplit" | "procurementProgress"
   >,
   userId?: string,
   warehouseResponsibleUserId?: string,
 ) {
   if (!userId) return false
+  if (order.procurementProgress) return Object.values(order.procurementProgress).some(
+    (state) => state.step !== "complete" && state.waitingForUserId === userId,
+  )
+  if (order.procurementSplit) {
+    return order.waitingForUserId === userId && getUnassignedProcurementLines(order).length > 0
+  }
   if (
     ["warehouse", "warehouse_receipt"].includes(order.currentStep) &&
     warehouseResponsibleUserId
@@ -474,12 +657,14 @@ export function isOrderSuccessfullyClosed(
 export function canUserViewRejectedOrder(
   order: Pick<
     OrderRecord,
-    "applicantId" | "createdByUserId" | "lastActorUserId" | "status"
+    "applicantId" | "createdByUserId" | "lastActorUserId" | "status" | "financeCancellation"
   >,
   userId?: string,
   supervisorUserId?: string,
 ) {
   if (order.status !== "rejected") return true
+  // Financial cancellations remain visible under the caller's normal order-access scope.
+  if (order.financeCancellation) return Boolean(userId)
   return Boolean(
     userId &&
       [order.createdByUserId, supervisorUserId ?? order.applicantId].includes(userId),

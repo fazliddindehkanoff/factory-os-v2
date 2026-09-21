@@ -37,7 +37,7 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 export function AppSidebar({ lang, messages, ...props }: AppSidebarProps) {
   const pathname = usePathname()
   const isSettings = pathname.includes("/settings/")
-  const { can, canViewOrders, canViewSettingsSection } = useAuthorization()
+  const { can, canViewOrders, canViewFinance, canViewSettingsSection } = useAuthorization()
   const settingsItems = [
     { section: "positions", title: messages.positions },
     { section: "products", title: messages.productList },
@@ -87,7 +87,7 @@ export function AppSidebar({ lang, messages, ...props }: AppSidebarProps) {
         icon: <PackageSearchIcon />,
         isActive: pathname.includes("/procurement"),
       }] : []),
-      ...(can("finance.view") ? [{
+      ...(canViewFinance ? [{
         title: messages.finance,
         url: `/${lang}/finance`,
         icon: <WalletCardsIcon />,

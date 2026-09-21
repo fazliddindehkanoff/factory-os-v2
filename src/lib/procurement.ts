@@ -22,6 +22,7 @@ export type SupplierRecord = {
 }
 
 export type QuotationLineRecord = {
+  paymentMethod?: "bank" | "cash"
   orderLineId: string
   quantity: number
   unitPrice: number
@@ -40,6 +41,8 @@ export type QuotationRecord = {
   lines: QuotationLineRecord[]
   amount: number
   selected: boolean
+  /** Undefined means all lines when selected (legacy quotations). */
+  selectedLineIds?: string[]
   createdByUserId: string
   createdAt: string
 }

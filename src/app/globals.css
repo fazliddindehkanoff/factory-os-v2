@@ -166,6 +166,19 @@
   color-scheme: dark;
 }
 
+.telegram-app .telegram-finance {
+  --background: var(--tg-card);
+  --foreground: var(--tg-text);
+  --card: var(--tg-card);
+  --card-foreground: var(--tg-text);
+  --muted: var(--tg-card-muted);
+  --muted-foreground: var(--tg-text-secondary);
+  --border: var(--tg-border);
+  --input: var(--tg-border);
+  --accent: var(--tg-card-muted);
+  --accent-foreground: var(--tg-text);
+}
+
 .telegram-app .tg-phone {
   background: var(--tg-page);
 }

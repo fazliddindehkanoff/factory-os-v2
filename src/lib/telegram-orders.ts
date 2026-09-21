@@ -22,10 +22,12 @@ import {
 } from "@/db/schema"
 import type { Locale } from "@/lib/i18n"
 import {
+  canViewParentOrderLink,
   getAssignedProcurementLineIds,
   getProcurementSuborderForSpecialist,
   isOrderAssignedToProcurementSpecialist,
   isOrderWaitingForUser,
+  isOperationalOrder,
   type OrderRecord,
   type OrderStatus,
 } from "@/lib/orders"
@@ -62,6 +64,9 @@ export type TelegramOrderSummary = {
 }
 
 export type TelegramOrderDetail = TelegramOrderSummary & {
+  parentOrderId?: string
+  parentOrderNumber?: string
+  childOrders: Array<{ id: string; number: string }>
   comment: string
   lines: Array<{ id: string; product: string; unit: string; quantity: number; note: string }>
   comments: Array<{
@@ -78,6 +83,8 @@ type TelegramOrderStatus = TelegramOrderSummary["status"]
 
 type VisibleOrderRow = {
   id: string
+  parentOrderId?: string
+  parentOrderNumber?: string
   number: string
   type: OrderRecord["type"]
   status: TelegramOrderStatus
@@ -164,6 +171,7 @@ async function getOrderAccess(userId: string) {
     canViewAll: grants.some((grant) => grant.grantsAll) || permissions.has("requests.view"),
     canViewOwn: grants.some((grant) => grant.grantsAll) || permissions.has("requests.view_own"),
     procurementSpecialist: roleCodes.has("procurement_manager") && !roleCodes.has("procurement_head"),
+    canViewParentLink: canViewParentOrderLink([...roleCodes]),
   }
 }
 
@@ -178,7 +186,7 @@ async function getWaitingOrderIds(userId: string) {
   return new Set(rows.map((row) => row.orderId))
 }
 
-async function getVisibleOrderRows(userId: string, lang: Locale) {
+async function getVisibleOrderRows(userId: string, lang: Locale, includeContainers = false) {
   const access = await getOrderAccess(userId)
   if (!access.canViewAll && !access.canViewOwn) return []
   const localized = localeField[lang]
@@ -192,6 +200,7 @@ async function getVisibleOrderRows(userId: string, lang: Locale) {
   const storedOrders = storedRows
     .map((row) => ({ order: parseStoredOrder(row.payload), ownerId: row.createdByUserId }))
     .filter((row): row is { order: OrderRecord; ownerId: string | null } => Boolean(row.order))
+    .filter(({ order }) => includeContainers || isOperationalOrder(order))
     .filter(({ order, ownerId }) => access.canViewAll || order.applicantId === userId || order.createdByUserId === userId || ownerId === userId)
     .filter(({ order }) => !access.procurementSpecialist || isOrderAssignedToProcurementSpecialist(order, userId))
 
@@ -216,9 +225,11 @@ async function getVisibleOrderRows(userId: string, lang: Locale) {
       : undefined
     return {
     id: order.id,
+    parentOrderId: order.parentOrderId,
+    parentOrderNumber: order.parentOrderNumber,
     number: procurementSuborder?.number ?? order.number,
     type: order.type,
-    status: toTelegramOrderStatus(order.status),
+    status: order.financeCancellation ? "cancelled" : toTelegramOrderStatus(order.status),
     urgency: order.urgency,
     applicant: userNames.get(order.applicantId) ?? order.applicantId,
     department: order.departmentIds.map((id) => departmentNames.get(id)).filter(Boolean).join(", ") || "—",
@@ -258,9 +269,10 @@ export async function getTelegramOrders(userId: string, lang: Locale, waitingOnl
 }
 
 export async function getTelegramOrder(userId: string, orderId: string, lang: Locale) {
-  const rows = await getVisibleOrderRows(userId, lang)
+  const rows = await getVisibleOrderRows(userId, lang, true)
   const order = rows.find((row) => row.id === orderId)
   if (!order) return null
+  const access = await getOrderAccess(userId)
   const localized = localeField[lang]
   const productIds = [...new Set(order.lines.map((line) => line.productId))]
   const unitTypeIds = [...new Set(order.lines.map((line) => line.unitTypeId).filter(Boolean) as string[])]
@@ -295,6 +307,9 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
   return {
     id: order.id,
     number: order.number,
+    parentOrderId: access.canViewParentLink ? order.parentOrderId : undefined,
+    parentOrderNumber: access.canViewParentLink ? order.parentOrderNumber : undefined,
+    childOrders: rows.filter((child) => child.parentOrderId === order.id).map((child) => ({ id: child.id, number: child.number })),
     type: order.type,
     status: order.status,
     urgency: order.urgency,

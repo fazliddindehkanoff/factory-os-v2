@@ -7,6 +7,8 @@ import { useSettings } from "@/components/settings/settings-provider"
 import { createAppRecord, loadAppRecords } from "@/lib/client-app-records"
 import {
   getAssignedProcurementLineIds,
+  getProcurementLinesAtStep,
+  getOrderActionView,
   getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
   isOrderAssignedToProcurementSpecialist,
@@ -104,7 +106,12 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   } = useOrders()
   const { currentUserId, data } = useSettings()
   const [storedCases, setStoredCases] = React.useState<ProcurementCase[]>([])
-  const [quotations, setQuotations] = React.useState<QuotationRecord[]>([])
+  const [quotations, updateQuotations] = React.useState<QuotationRecord[]>([])
+  const quotationRevision = React.useRef(0)
+  const setQuotations = React.useCallback((value: React.SetStateAction<QuotationRecord[]>) => {
+    quotationRevision.current += 1
+    updateQuotations(value)
+  }, [])
   const [suppliers, setSuppliers] = React.useState(initialSuppliers)
   const [storageReady, setStorageReady] = React.useState(false)
   const currentUser = data.users.find((user) => user.id === currentUserId)
@@ -128,7 +135,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     } finally {
       setStorageReady(true)
     }
-  }, [])
+  }, [setQuotations])
 
   React.useEffect(() => {
     if (!storageReady) return
@@ -140,17 +147,32 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   React.useEffect(() => {
     if (!currentUserId || !storageReady) return
     let cancelled = false
-    void Promise.all([
+    let loading = false
+    async function refresh() {
+      if (loading || document.visibilityState === "hidden") return
+      loading = true
+      const revision = quotationRevision.current
+      try {
+      const [serverSuppliers, serverQuotations, serverCases] = await Promise.all([
       canViewSuppliers ? loadAppRecords<SupplierRecord>("suppliers").catch(() => []) : Promise.resolve([]),
-      canViewQuotations ? loadAppRecords<QuotationRecord>("quotations").catch(() => []) : Promise.resolve([]),
+      canViewQuotations ? loadAppRecords<QuotationRecord>("quotations") : Promise.resolve([]),
       canViewProcurementCases ? loadAppRecords<ProcurementCase>("procurement-cases").catch(() => []) : Promise.resolve([]),
-    ]).then(([serverSuppliers, serverQuotations, serverCases]) => {
+      ])
       if (cancelled) return
       setSuppliers((current) => mergeRecords(current, serverSuppliers))
-      setQuotations((current) => mergeRecords(current, serverQuotations))
+      if (revision === quotationRevision.current) updateQuotations(serverQuotations)
       setStoredCases((current) => mergeRecords(current, serverCases))
-    })
-    return () => { cancelled = true }
+      } finally { loading = false }
+    }
+    const refreshSafely = () => { void refresh().catch(() => undefined) }
+    refreshSafely()
+    const interval = window.setInterval(refreshSafely, 30_000)
+    window.addEventListener("focus", refreshSafely)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refreshSafely)
+    }
   }, [canViewProcurementCases, canViewQuotations, canViewSuppliers, currentUserId, storageReady])
 
   const cases = React.useMemo(() => {
@@ -167,14 +189,15 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
         "complete",
       ].includes(order.currentStep),
     )
-    const next = [...storedCases]
-    for (const order of procurementOrders) {
+    const next = storedCases.filter((item) => procurementOrders.some((order) => order.id === item.orderId))
+    for (const storedOrder of procurementOrders) {
+      const order = getOrderActionView(storedOrder, currentUserId)
       const index = next.findIndex((item) => item.orderId === order.id)
       const existing = index >= 0 ? next[index] : undefined
       const stage = order.currentStep === "procurement_accept"
         ? "awaiting_assignment" as const
         : order.currentStep === "sourcing"
-          ? existing?.reviewComment ? "changes_requested" as const : "collecting_offers" as const
+          ? order.procurementReviewComment ? "changes_requested" as const : "collecting_offers" as const
           : order.currentStep === "price_check"
             ? "head_review" as const
             : "approved" as const
@@ -195,7 +218,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       else next[index] = normalized
     }
     return next
-  }, [orders, ordersReady, storageReady, storedCases])
+  }, [orders, ordersReady, storageReady, storedCases, currentUserId])
 
   async function addSupplier(supplier: SupplierInput) {
     if (!can("suppliers.manage")) return false
@@ -287,9 +310,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
         }
       : undefined)
     const order = orders.find((item) => item.id === procurementCase?.orderId)
-    const requiredLines = order?.lines.filter(
-      (line) => line.fulfillmentStatus === "needs_procurement",
-    ) ?? []
+    const requiredLines = order ? getProcurementLinesAtStep(order, "sourcing", currentUserId) : []
     const requiredLinesById = new Map(requiredLines.map((line) => [line.id, line]))
     const assignedLineIds = new Set(order
       ? getAssignedProcurementLineIds(order, currentUserId)
@@ -300,7 +321,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       !supplier ||
       !order ||
       !isOrderAssignedToProcurementSpecialist(order, currentUserId) ||
-      order?.currentStep !== "sourcing" ||
+      !requiredLines.length ||
       !quotation.lines.length ||
       new Set(submittedLineIds).size !== submittedLineIds.length ||
       quotation.lines.some(
@@ -349,23 +370,19 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     if (!can("procurement.quote")) return false
     const procurementCase = cases.find((item) => item.id === procurementCaseId)
     const order = orders.find((item) => item.id === procurementCase?.orderId)
-    const currentSuborder = order
-      ? getProcurementSuborderForSpecialist(order, currentUserId)
-      : undefined
-    const currentLineIds = new Set(currentSuborder?.orderLineIds ?? [])
-    const requiredLines = order?.lines.filter((line) => currentLineIds.has(line.id)) ?? []
+    const requiredLines = order ? getProcurementLinesAtStep(order, "sourcing", currentUserId) : []
+    const currentLineIds = new Set(requiredLines.map((line) => line.id))
     const quotationLines = quotations
       .filter((item) => item.procurementCaseId === procurementCaseId)
       .flatMap((item) => item.lines)
       .filter((line) => currentLineIds.has(line.orderLineId))
-    const updatedOrder = procurementCase && order && currentSuborder &&
-      quotationLinesCoverRequirements(requiredLines, quotationLines)
+    const updatedOrder = procurementCase && order &&
+      requiredLines.some((line) => quotationLinesCoverRequirements([line], quotationLines.filter((item) => item.orderLineId === line.id)))
       ? await submitProcurementOffers(procurementCase.orderId)
       : undefined
     if (
       !procurementCase ||
       !order ||
-      !currentSuborder ||
       !updatedOrder
     ) return false
     updateCase(procurementCaseId, {
@@ -384,19 +401,23 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     const selectedQuotations = quotations.filter(
       (item) => item.procurementCaseId === procurementCaseId && selectedIds.includes(item.id),
     )
-    const requiredLines = order?.lines.filter((line) => line.fulfillmentStatus === "needs_procurement") ?? []
+    const requiredLines = order ? getProcurementLinesAtStep(order, "price_check", currentUserId) : []
+    const reviewIds = new Set(requiredLines.map((line) => line.id))
     if (
       !procurementCase ||
       !order ||
       !selectedIds.length ||
       selectedQuotations.length !== selectedIds.length ||
-      !quotationLinesCoverRequirements(requiredLines, selectedQuotations.flatMap((item) => item.lines), "exact") ||
+      !quotationLinesCoverRequirements(requiredLines, selectedQuotations.flatMap((item) => item.lines).filter((line) => reviewIds.has(line.orderLineId)), "exact") ||
       !await reviewProcurementOffers(procurementCase.orderId, true, "", selectedIds)
     ) return false
     const selectedIdSet = new Set(selectedIds)
-    setQuotations((current) => current.map((item) => item.procurementCaseId === procurementCaseId
-      ? { ...item, selected: selectedIdSet.has(item.id) }
-      : item))
+    setQuotations((current) => current.map((item) => {
+      if (item.procurementCaseId !== procurementCaseId) return item
+      const selectedLineIds = [...(item.selectedLineIds ?? (item.selected ? item.lines.map((line) => line.orderLineId) : [])).filter((id) => !reviewIds.has(id)),
+        ...item.lines.filter((line) => reviewIds.has(line.orderLineId) && selectedIdSet.has(item.id)).map((line) => line.orderLineId)]
+      return { ...item, selected: selectedLineIds.length > 0, selectedLineIds }
+    }))
     updateCase(procurementCaseId, {
       stage: "approved",
       reviewComment: undefined,

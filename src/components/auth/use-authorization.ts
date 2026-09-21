@@ -7,6 +7,7 @@ import {
   type PermissionCode,
 } from "@/lib/rbac"
 import type { SettingsSection } from "@/lib/settings"
+import { hasFinanceAccess } from "@/lib/finance-workflow"
 
 const orderViewPermissions: PermissionCode[] = ["requests.view", "requests.view_own"]
 const dashboardPermissions: PermissionCode[] = [
@@ -43,6 +44,7 @@ export function useAuthorization() {
     canAny,
     canAccessDashboard: canAny(dashboardPermissions),
     canViewOrders: canAny(orderViewPermissions),
+    canViewFinance: hasFinanceAccess(roles.map((role) => role.code), can("finance.view")),
     canViewSettingsSection,
     canManageSettingsSection,
   }

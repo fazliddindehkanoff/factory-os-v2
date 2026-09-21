@@ -11,6 +11,8 @@ import {
 } from "@/lib/client-app-records"
 import {
   canCreateRequestForApplicant,
+  getOrderActionView,
+  getProcurementLinesAtStep,
   canUserViewRejectedOrder,
   getProcurementSpecialistIds,
   isOrderAssignedToProcurementSpecialist,
@@ -41,8 +43,8 @@ type OrdersContextValue = {
   storageReady: boolean
   addOrder: (order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => Promise<OrderRecord>
   resubmitOrder: (orderId: string, order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => OrderRecord | undefined
-  approveOrder: (orderId: string) => Promise<boolean>
-  rejectOrder: (orderId: string) => void
+  approveOrder: (orderId: string, paymentForm?: FormData) => Promise<boolean>
+  rejectOrder: (orderId: string) => Promise<boolean>
   submitWarehouseReport: (orderId: string, quantities: Record<string, number>) => Promise<boolean>
   assignProcurementSpecialist: (
     orderId: string,
@@ -61,7 +63,12 @@ const OrdersContext = React.createContext<OrdersContextValue | null>(null)
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const { currentUserId, data } = useSettings()
   const initialSettingsData = React.useRef(data)
-  const [orders, setOrders] = React.useState(initialOrders)
+  const [orders, updateOrders] = React.useState(initialOrders)
+  const orderRevision = React.useRef(0)
+  const setOrders = React.useCallback((value: React.SetStateAction<OrderRecord[]>) => {
+    orderRevision.current += 1
+    updateOrders(value)
+  }, [])
   const [notifications, setNotifications] = React.useState<WorkflowNotification[]>([])
   const [storageReady, setStorageReady] = React.useState(false)
   const currentUser = data.users.find((user) => user.id === currentUserId)
@@ -160,7 +167,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setStorageReady(true)
     }
-  }, [])
+  }, [setOrders])
 
   React.useEffect(() => {
     if (!storageReady) return
@@ -171,15 +178,29 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (!currentUserId || !storageReady) return
     let cancelled = false
-    void loadAppRecords<OrderRecord>("orders").then((serverOrders) => {
-      if (cancelled) return
-      setOrders((current) => {
-        const merged = new Map(current.map((order) => [order.id, order]))
-        for (const order of serverOrders) merged.set(order.id, order)
-        return [...merged.values()].sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-      })
-    }).catch(() => undefined)
-    return () => { cancelled = true }
+    let loading = false
+    async function refresh() {
+      if (loading || document.visibilityState === "hidden") return
+      loading = true
+      const revision = orderRevision.current
+      try {
+        const serverOrders = await loadAppRecords<OrderRecord>("orders")
+        if (!cancelled && revision === orderRevision.current) {
+          updateOrders(serverOrders.sort((left, right) => right.createdAt.localeCompare(left.createdAt)))
+        }
+      } finally { loading = false }
+    }
+    const refreshSafely = () => { void refresh().catch(() => undefined) }
+    refreshSafely()
+    const interval = window.setInterval(refreshSafely, 30_000)
+    window.addEventListener("focus", refreshSafely)
+    window.addEventListener("factory-os:orders-changed", refreshSafely)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refreshSafely)
+      window.removeEventListener("factory-os:orders-changed", refreshSafely)
+    }
   }, [currentUserId, storageReady])
 
   React.useEffect(() => {
@@ -317,7 +338,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     ) {
       throw new Error("The selected applicant is not allowed for this user.")
     }
-    const sequence = Math.max(0, ...orders.map((item) => Number(item.number.split("-").at(-1)))) + 1
+    const sequence = Math.max(0, ...orders.map((item) => Number(item.number.split("/")[0].split("-").at(-1)) || 0)) + 1
     const createdAt = new Date().toISOString()
     const base = {
       ...order,
@@ -362,7 +383,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     changes: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">,
   ) {
     const existing = orders.find((order) => order.id === orderId)
-    if (!can("requests.create") || !existing || existing.status !== "rejected" || existing.createdByUserId !== currentUserId) {
+    if (!can("requests.create") || !existing || existing.financeCancellation || existing.status !== "rejected" || existing.createdByUserId !== currentUserId) {
       return undefined
     }
     const creator = data.users.find((user) => user.id === currentUserId)
@@ -402,6 +423,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       lastActorUserId: currentUserId,
       procurementSpecialistUserId: undefined,
       procurementLineAssignments: undefined,
+      procurementProgress: undefined,
       lines: normalizedChanges.lines.map((line) => ({
         ...line,
         availableQuantity: undefined,
@@ -421,8 +443,11 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     return updated
   }
 
-  async function approveOrder(orderId: string) {
-    const order = orders.find((item) => item.id === orderId)
+  async function approveOrder(orderId: string, paymentForm?: FormData) {
+    const storedOrder = orders.find((item) => item.id === orderId)
+    const order: OrderRecord | undefined = storedOrder ? paymentForm && getProcurementLinesAtStep(storedOrder, "procurement_order", currentUserId).length
+      ? { ...storedOrder, currentStep: "procurement_order", waitingForUserId: currentUserId }
+      : getOrderActionView(storedOrder, currentUserId) : undefined
     const completesOperationalTask =
       (order?.currentStep === "procurement_order" && can("procurement.quote")) ||
       (order?.currentStep === "warehouse_receipt" && can("warehouse.receive"))
@@ -435,20 +460,22 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     ) return false
     let updated: OrderRecord
     try {
-      updated = await approveOrderRecord<OrderRecord>(orderId)
-    } catch {
+      updated = await approveOrderRecord<OrderRecord>(orderId, paymentForm)
+    } catch (error) {
+      if (paymentForm) throw error
       return false
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
     notify(order.lastActorUserId, updated, { kind: "approved_by", actorName })
     if (order.createdByUserId !== order.lastActorUserId) notify(order.createdByUserId, updated, { kind: "step_approved" })
-    notify(updated.waitingForUserId, updated, { kind: "action_required" })
+    notifyNextActors(storedOrder!, updated)
     return true
   }
 
-  function rejectOrder(orderId: string) {
-    const order = orders.find((item) => item.id === orderId)
+  async function rejectOrder(orderId: string) {
+    const storedOrder = orders.find((item) => item.id === orderId)
+    const order = storedOrder ? getOrderActionView(storedOrder, currentUserId) : undefined
     if (
       !order ||
       !can("approvals.reject") ||
@@ -460,7 +487,15 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         "procurement_order",
         "warehouse_receipt",
       ].includes(order.currentStep)
-    ) return
+    ) return false
+    if (order.procurementProgress) {
+      try {
+        const updated = await runOrderWorkflowAction<OrderRecord>(orderId, "reject-procurement-positions")
+        setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
+        notify(updated.createdByUserId, updated, { kind: "rejected" })
+        return true
+      } catch { return false }
+    }
     const updated = {
       ...order,
       status: "rejected" as const,
@@ -483,6 +518,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     ))
     notify(order.createdByUserId, updated, { kind: "rejected" })
     if (order.lastActorUserId !== order.createdByUserId) notify(order.lastActorUserId, updated, { kind: "rejected" })
+    return true
   }
 
   async function submitWarehouseReport(orderId: string, quantities: Record<string, number>) {
@@ -527,17 +563,22 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       (order.currentStep === "procurement_accept" && order.waitingForUserId !== currentUserId)
     ) return false
     let updated: OrderRecord
+    let children: OrderRecord[] = []
     try {
       updated = await runOrderWorkflowAction<OrderRecord>(orderId, "assign-procurement-specialist", {
         specialistUserId: specialist.id,
         orderLineIds,
-      })
+      }, (related) => { children = related })
     } catch {
       return false
     }
-    setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
+    setOrders((current) => {
+      const merged = new Map(current.map((item) => [item.id, item]))
+      for (const item of [updated, ...children]) merged.set(item.id, item)
+      return [...merged.values()]
+    })
     const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
-    notify(specialist.id, updated, { kind: "procurement_assigned", actorName })
+    notify(specialist.id, children.find((item) => item.procurementSpecialistUserId === specialist.id) ?? updated, { kind: "procurement_assigned", actorName })
     return true
   }
 
@@ -546,7 +587,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     if (
       !order ||
       !can("procurement.quote") ||
-      order.currentStep !== "sourcing" ||
+      !getProcurementLinesAtStep(order, "sourcing", currentUserId).length ||
       !isOrderAssignedToProcurementSpecialist(order, currentUserId)
     ) return undefined
     let updated: OrderRecord
@@ -556,10 +597,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       return undefined
     }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
-    if (updated.currentStep === "price_check") {
-      const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
-      notify(updated.waitingForUserId, updated, { kind: "procurement_offers_submitted", actorName })
-    }
+    const actorName = data.users.find((user) => user.id === currentUserId)?.fullName ?? currentUserId
+    notifyNextActors(order, updated, { kind: "procurement_offers_submitted", actorName })
     return updated
   }
 
@@ -569,8 +608,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       !order ||
       !can(approved ? "approvals.approve" : "approvals.reject") ||
       !can("procurement.select_supplier") ||
-      order.currentStep !== "price_check" ||
-      order.waitingForUserId !== currentUserId ||
+      !getProcurementLinesAtStep(order, "price_check", currentUserId).length ||
       (!approved && !comment.trim())
     ) return false
     let updated: OrderRecord
@@ -590,8 +628,19 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     for (const specialistUserId of getProcurementSpecialistIds(order)) {
       notify(specialistUserId, updated, event)
     }
-    if (approved) notify(updated.waitingForUserId, updated, { kind: "action_required" })
+    if (approved) notifyNextActors(order, updated)
     return true
+  }
+
+  function notifyNextActors(previous: OrderRecord, updated: OrderRecord, event: WorkflowNotificationEvent = { kind: "action_required" }) {
+    if (!updated.procurementProgress) { notify(updated.waitingForUserId, updated, event); return }
+    const recipients = new Set<string>()
+    for (const [lineId, state] of Object.entries(updated.procurementProgress)) {
+      const old = previous.procurementProgress?.[lineId]
+      if (state.step !== "complete" && state.waitingForUserId &&
+        (state.step !== (old?.step ?? previous.currentStep) || state.waitingForUserId !== (old?.waitingForUserId ?? previous.waitingForUserId))) recipients.add(state.waitingForUserId)
+    }
+    for (const userId of recipients) notify(userId, updated, event)
   }
 
   function markNotificationsRead() {

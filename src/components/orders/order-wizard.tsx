@@ -97,6 +97,7 @@ export function OrderWizard({
     reviseOrderId &&
     (!revisionOrder ||
       revisionOrder.status !== "rejected" ||
+      revisionOrder.financeCancellation ||
       revisionOrder.createdByUserId !== currentUser?.id)
   ) {
     return <AccessDenied lang={lang} permissions={["requests.create"]} />

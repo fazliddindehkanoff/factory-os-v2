@@ -23,6 +23,11 @@ import { useAuthorization } from "@/components/auth/use-authorization";
 import { OrderComments } from "@/components/orders/order-comments";
 import { OrderProcurementPanel } from "@/components/orders/order-procurement-panel";
 import { useOrders } from "@/components/orders/orders-provider";
+import { OrderFamilyLinks } from "@/components/orders/order-family-links";
+import { OrderPaymentDialog, OrderPaymentSummary } from "@/components/orders/order-payment-dialog";
+import { orderPaymentCopy } from "@/components/orders/order-payment-copy";
+import { useProcurement } from "@/components/procurement/procurement-provider";
+import { approvedPaymentLines } from "@/lib/order-payment";
 import { useSettings } from "@/components/settings/settings-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -48,10 +53,13 @@ import type { Locale, Messages } from "@/lib/i18n";
 import { downloadOrderAttachment } from "@/lib/order-attachments";
 import {
   canUserViewRejectedOrder,
+  getOrderActionView,
+  getProcurementLinesAtStep,
   getAssignedProcurementLineIds,
   getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
   isOrderSuccessfullyClosed,
+  isOperationalOrder,
   isOrderWaitingForUser,
   isOrderAssignedToProcurementSpecialist,
   workflowSteps,
@@ -85,12 +93,13 @@ export function OrdersList({
   messages: Messages;
 }) {
   const {
-    orders,
+    orders: allOrders,
     deleteOrders,
     approveOrder,
     rejectOrder,
     submitWarehouseReport,
   } = useOrders();
+  const orders = allOrders.filter(isOperationalOrder);
   const { data } = useSettings();
   const { can, canViewOrders, currentUser } = useAuthorization();
   const searchParams = useSearchParams();
@@ -102,9 +111,10 @@ export function OrdersList({
   const [pageSize, setPageSize] = React.useState(10);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const [detailOrderId, setDetailOrderId] = React.useState<string | null>(
-    searchParams.get("order"),
-  );
+  const requestedOrderId = searchParams.get("order");
+  const [detailSelection, setDetailSelection] = React.useState<{ url: string | null; id: string | null; section?: "procurement" }>({ url: requestedOrderId, id: requestedOrderId });
+  const detailOrderId = detailSelection.url === requestedOrderId ? detailSelection.id : requestedOrderId;
+  const setDetailOrderId = (id: string | null, section?: "procurement") => setDetailSelection({ url: requestedOrderId, id, section });
   const canCreate = can("requests.create");
   const canDelete = can("requests.edit");
   const ownOnly = !can("requests.view") && can("requests.view_own");
@@ -186,7 +196,8 @@ export function OrdersList({
   const partiallySelected =
     pageIds.some((id) => validSelectedIds.has(id)) && !allPageSelected;
   const hasFilters = Object.values(filters).some(Boolean);
-  const detailOrder = filteredOrders.find((order) => order.id === detailOrderId);
+  const storedDetailOrder = allOrders.find((order) => order.id === detailOrderId);
+  const detailOrder = storedDetailOrder ? getOrderActionView(storedDetailOrder, currentUser?.id) : undefined;
   const statistics = [
     {
       label: messages.totalOrders,
@@ -450,13 +461,14 @@ export function OrdersList({
             <TableHead>{messages.urgency}</TableHead>
             <TableHead>{messages.orderStatus}</TableHead>
             <TableHead>{messages.createdAt}</TableHead>
+            <TableHead><span className="sr-only">{lang === "ru" ? "Действия" : lang === "tr" ? "İşlemler" : "Amallar"}</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {pageOrders.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={11}
+                colSpan={12}
                 className="h-28 text-center text-muted-foreground"
               >
                 {waitingOnly ? copy.noWaiting : messages.noRecords}
@@ -472,6 +484,7 @@ export function OrdersList({
                 selected={validSelectedIds.has(order.id)}
                 onToggle={toggleOrder}
                 onOpen={() => setDetailOrderId(order.id)}
+                onPlace={() => setDetailOrderId(order.id, "procurement")}
                 data={data}
                 currentUserId={currentUser?.id}
               />
@@ -554,6 +567,7 @@ export function OrdersList({
         <OrderDetailsDialog
           key={detailOrder.id}
           order={detailOrder}
+          initialSection={detailSelection.id === detailOrder.id && detailSelection.url === requestedOrderId ? detailSelection.section : undefined}
           lang={lang}
           messages={messages}
           data={data}
@@ -570,20 +584,22 @@ export function OrdersList({
           canWarehouseReport={can("warehouse.check_stock")}
           canRevise={
             detailOrder.status === "rejected" &&
+            !detailOrder.financeCancellation &&
             detailOrder.createdByUserId === currentUser?.id
           }
           open
           onOpenChange={(open) => {
             if (!open) setDetailOrderId(null);
           }}
-          onApprove={async (id) => {
-            const approved = await approveOrder(id);
+          onApprove={async (id, paymentForm) => {
+            const approved = await approveOrder(id, paymentForm);
             if (approved) setDetailOrderId(null);
             return approved;
           }}
-          onReject={(id) => {
-            rejectOrder(id);
-            setDetailOrderId(null);
+          onReject={async (id) => {
+            const rejected = await rejectOrder(id);
+            if (rejected) setDetailOrderId(null);
+            return rejected;
           }}
           onWarehouseReport={async (id, quantities) => {
             const submitted = await submitWarehouseReport(id, quantities);
@@ -630,6 +646,7 @@ function OrderRow({
   selected,
   onToggle,
   onOpen,
+  onPlace,
   data,
   currentUserId,
 }: {
@@ -639,9 +656,14 @@ function OrderRow({
   selected: boolean;
   onToggle: (id: string, checked: boolean) => void;
   onOpen: () => void;
+  onPlace: () => void;
   data: ReturnType<typeof useSettings>["data"];
   currentUserId?: string;
 }) {
+  const { can } = useAuthorization();
+  const canPlace = Boolean(currentUserId && can("procurement.quote") &&
+    getProcurementLinesAtStep(order, "procurement_order", currentUserId).length &&
+    isOrderAssignedToProcurementSpecialist(order, currentUserId));
   const applicant = data.users.find((user) => user.id === order.applicantId);
   const warehouse = data.warehouses.find(
     (item) => item.id === order.warehouseId,
@@ -713,12 +735,16 @@ function OrderRow({
         <StatusBadge status={order.status} messages={messages} lang={lang} />
       </TableCell>
       <TableCell>{formatDate(order.createdAt.slice(0, 10))}</TableCell>
+      <TableCell onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        {canPlace ? <Button size="sm" onClick={onPlace}>{orderPaymentCopy[lang].shortTitle}</Button> : null}
+      </TableCell>
     </TableRow>
   );
 }
 
 function OrderDetailsDialog({
   order,
+  initialSection,
   lang,
   messages,
   data,
@@ -734,6 +760,7 @@ function OrderDetailsDialog({
   onWarehouseReport,
 }: {
   order: OrderRecord;
+  initialSection?: "procurement";
   lang: Locale;
   messages: Messages;
   data: ReturnType<typeof useSettings>["data"];
@@ -744,13 +771,19 @@ function OrderDetailsDialog({
   canRevise: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onApprove: (id: string) => Promise<boolean>;
-  onReject: (id: string) => void;
+  onApprove: (id: string, paymentForm?: FormData) => Promise<boolean>;
+  onReject: (id: string) => Promise<boolean>;
   onWarehouseReport: (id: string, quantities: Record<string, number>) => Promise<boolean>;
 }) {
   const { currentUser } = useAuthorization();
+  const { quotations } = useProcurement();
   const copy = workflowCopy(lang);
   const dialogContentRef = React.useRef<HTMLDivElement>(null);
+  const procurementSectionRef = React.useRef<HTMLDivElement>(null);
+  const [placementSelection, setPlacementSelection] = React.useState<string[]>([]);
+  const placementLineIds = new Set(getProcurementLinesAtStep(order, "procurement_order", currentUser?.id).map((line) => line.id));
+  const placementLines = canApprove ? approvedPaymentLines(order, quotations).filter((line) => placementLineIds.has(line.orderLineId) && getAssignedProcurementLineIds(order, currentUser?.id).includes(line.orderLineId)) : [];
+  const selectedPlacementIds = placementSelection.filter((id) => placementLines.some((line) => line.orderLineId === id));
   const [quantities, setQuantities] = React.useState<Record<string, number>>(
     () =>
       Object.fromEntries(
@@ -801,7 +834,13 @@ function OrderDetailsDialog({
   React.useLayoutEffect(() => {
     if (!open) return;
     dialogContentRef.current?.scrollTo({ top: 0 });
-  }, [open, order.id]);
+    if (initialSection !== "procurement") return;
+    const frame = requestAnimationFrame(() => {
+      procurementSectionRef.current?.scrollIntoView({ block: "start" });
+      procurementSectionRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, order.id, initialSection]);
 
   async function downloadAttachment(attachment: NonNullable<OrderRecord["attachments"]>[number]) {
     setAttachmentError("");
@@ -837,6 +876,16 @@ function OrderDetailsDialog({
     }
   }
 
+  async function reject() {
+    setApprovalError("");
+    setApprovalPending(true);
+    try {
+      if (!await onReject(order.id)) setApprovalError(copy.actionFailed);
+    } finally {
+      setApprovalPending(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -856,6 +905,8 @@ function OrderDetailsDialog({
           </div>
           <DialogDescription>{copy.detailsDescription}</DialogDescription>
         </DialogHeader>
+
+        <OrderFamilyLinks order={order} lang={lang} />
 
         <section aria-labelledby="order-context" className="space-y-3">
           <h3 id="order-context" className="text-sm font-semibold">
@@ -896,15 +947,21 @@ function OrderDetailsDialog({
             />
             <DetailField
               label={copy.workflowStep}
-              value={stepLabel(order.currentStep, lang)}
+              value={order.procurementSplit && !isOperationalOrder(order)
+                ? (lang === "ru" ? "Распределён на самостоятельные заказы" : lang === "tr" ? "Bağımsız siparişlere dağıtıldı" : "Mustaqil buyurtmalarga taqsimlangan")
+                : stepLabel(order.currentStep, lang)}
             />
             <DetailField
               label={copy.waitingFor}
-              value={waitingFor?.fullName ?? copy.completed}
+              value={order.procurementSplit && !isOperationalOrder(order) ? "—" : waitingFor?.fullName ?? copy.completed}
             />
           </div>
         </section>
 
+        {order.financeCancellation ? <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
+          <p className="font-semibold">{lang === "ru" ? "Заявка отменена в финансах" : lang === "tr" ? "Talep finansta iptal edildi" : "Buyurtma moliyada bekor qilingan"}</p>
+          <p className="mt-1 whitespace-pre-wrap">{order.financeCancellation.comment}</p>
+        </div> : null}
         <WorkflowTimeline order={order} data={data} lang={lang} />
 
         <section aria-labelledby="order-lines" className="min-w-0 space-y-3">
@@ -1045,6 +1102,7 @@ function OrderDetailsDialog({
           </div>
         </section>
 
+        <OrderPaymentSummary order={order} lang={lang} />
         <OrderComments order={order} lang={lang} messages={messages} />
 
         {order.lines.some((line) => line.fulfillmentStatus === "needs_procurement") &&
@@ -1057,7 +1115,10 @@ function OrderDetailsDialog({
           "warehouse_receipt",
           "complete",
         ].includes(order.currentStep) ? (
-          <OrderProcurementPanel order={order} lang={lang} messages={messages} />
+          <div ref={procurementSectionRef} tabIndex={-1} className="scroll-mt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
+            <OrderProcurementPanel order={order} lang={lang} messages={messages}
+              placement={placementLines.length ? { lines: placementLines, selectedLineIds: selectedPlacementIds, onSelectionChange: setPlacementSelection } : undefined} />
+          </div>
         ) : null}
 
         {isWarehouseAction ? (
@@ -1082,11 +1143,13 @@ function OrderDetailsDialog({
           {isCurrentAssignee && !isWarehouseAction && !isProcurementAction ? (
             <>
               {canReject ? (
-                <Button variant="destructive" onClick={() => onReject(order.id)}>
-                  {copy.reject}
+                <Button variant="destructive" disabled={approvalPending} onClick={reject}>
+                  {approvalPending ? copy.processing : copy.reject}
                 </Button>
               ) : null}
-              {canApprove ? (
+              {canApprove && order.currentStep === "procurement_order" ? (
+                <OrderPaymentDialog order={order} lang={lang} selectedOrderLineIds={selectedPlacementIds} onSubmit={onApprove} />
+              ) : canApprove ? (
                 <Button disabled={approvalPending} onClick={approve}>
                   {approvalPending ? <LoaderCircleIcon className="animate-spin" /> : null}
                   {approvalPending ? copy.processing : isOperationalTask ? copy.completeStep : copy.approve}
@@ -1131,7 +1194,9 @@ function WorkflowTimeline({
   lang: Locale;
 }) {
   const copy = workflowCopy(lang);
-  const steps: Exclude<OrderRecord["currentStep"], "complete">[] = [...workflowSteps];
+  const steps: Exclude<OrderRecord["currentStep"], "complete">[] = order.procurementSplit
+    ? workflowSteps.slice(0, workflowSteps.indexOf("procurement_accept") + 1)
+    : [...workflowSteps];
   const creator = data.users.find((user) => user.id === order.createdByUserId);
   const currentIndex = steps.findIndex((step) => step === order.currentStep);
   const rejectedHistory = [...(order.workflowHistory ?? [])]
@@ -1159,6 +1224,14 @@ function WorkflowTimeline({
       else if (order.status === "rejected") state = index < rejectedIndex ? "completed" : index === rejectedIndex ? "rejected" : "skipped";
       else if (index < currentIndex) state = "completed";
       else if (index === currentIndex) state = "current";
+      if (order.procurementSplit && !isOperationalOrder(order) && step === "procurement_accept") state = "completed";
+      const positionStates = Object.values(order.procurementProgress ?? {});
+      const atStep = positionStates.filter((item) => item.step === step);
+      if (positionStates.length && order.status !== "rejected" && index >= steps.indexOf("sourcing")) {
+        if (atStep.length) state = "current";
+        else if (positionStates.every((item) => item.step === "complete" || steps.indexOf(item.step) > index)) state = "completed";
+        else state = "pending";
+      }
 
       const assignee = workflowAssignee(step, order, data);
       const isAutomatic = step === "department_supervisor" && supervisorWasSkipped;
@@ -1184,7 +1257,7 @@ function WorkflowTimeline({
       return {
         id: step,
         title: stepLabel(step, lang),
-        subtitle,
+        subtitle: atStep.length ? `${[...new Set(atStep.map((item) => data.users.find((user) => user.id === item.waitingForUserId)?.fullName).filter(Boolean))].join(", ")} · ${atStep.length} ${lang === "ru" ? "позиций" : lang === "tr" ? "kalem" : "pozitsiya"}` : subtitle,
         state,
         isAutomatic,
       };
