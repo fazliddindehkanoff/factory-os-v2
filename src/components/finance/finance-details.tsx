@@ -1,5 +1,7 @@
 "use client"
-import Link from "next/link"
+import * as React from "react"
+import { Button } from "@/components/ui/button"
+import { LinkedOrderDialog } from "@/components/orders/linked-order-dialog"
 import { useSettings } from "@/components/settings/settings-provider"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { PaymentRequest } from "@/lib/finance-workflow"
@@ -7,12 +9,13 @@ import type { Locale } from "@/lib/i18n"
 import { getLocalizedTitle } from "@/lib/settings"
 import { financeCopy } from "./finance-copy"
 
-export function FinanceDetails({ payment, lang, webApp, onClose }: { payment: PaymentRequest; lang: Locale; webApp?: boolean; onClose: () => void }) {
+export function FinanceDetails({ payment, lang, onClose }: { payment: PaymentRequest; lang: Locale; onClose: () => void }) {
   const { data } = useSettings()
+  const [orderOpen, setOrderOpen] = React.useState(false)
   const copy = financeCopy[lang]
   return <Dialog open onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-2xl">
     <DialogHeader><DialogTitle>{payment.supplierName} · {copy[payment.kind]}</DialogTitle><DialogDescription>{copy.stages[payment.stage]}</DialogDescription></DialogHeader>
-    <Link className="w-fit text-primary underline" href={webApp ? `/${lang}/telegram/orders/${encodeURIComponent(payment.orderId)}` : `/${lang}/orders?order=${encodeURIComponent(payment.orderId)}`}>{payment.orderNumber}</Link>
+    <Button variant="outline" className="w-fit max-w-full whitespace-normal" onClick={() => setOrderOpen(true)}>{copy.orderDetails} · {payment.orderNumber}</Button>
     <dl className="grid grid-cols-2 gap-3 text-sm">{[
       [copy.amount, `${payment.amount.toLocaleString()} UZS`], [copy.inn, payment.supplierInn || "—"],
       [copy.method, copy[payment.method]], [copy.dueDate, payment.dueDate || "—"], [copy.contract, payment.contractNumber || "—"],
@@ -31,5 +34,6 @@ export function FinanceDetails({ payment, lang, webApp, onClose }: { payment: Pa
       <p className="text-xs text-muted-foreground">{new Date(item.at).toLocaleString(lang)} · {copy.stages[item.to]}</p>
       {item.comment ? <p className="mt-1 whitespace-pre-wrap">{item.comment}</p> : null}
     </li>)}</ol></section>
+    {orderOpen ? <LinkedOrderDialog id={payment.orderId} lang={lang} onClose={() => setOrderOpen(false)} /> : null}
   </DialogContent></Dialog>
 }

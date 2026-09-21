@@ -142,7 +142,8 @@
   --tg-card-muted: #f8fafc;
   --tg-text: #1a1a2e;
   --tg-text-secondary: #566175;
-  --tg-text-muted: #8490a2;
+  --tg-text-muted: #5d6b80;
+  --tg-link: #2365a9;
   --tg-border: #e2e7ef;
   --tg-divider: #e7ebf1;
   --tg-input: #ffffff;
@@ -159,18 +160,21 @@
   --tg-card-muted: #1c2940;
   --tg-text: #f4f7fb;
   --tg-text-secondary: #c1cada;
-  --tg-text-muted: #8e9bb0;
+  --tg-text-muted: #acb8cb;
+  --tg-link: #8cc3ff;
   --tg-border: #2a3952;
   --tg-divider: #26344b;
   --tg-input: #111c2e;
   color-scheme: dark;
 }
 
-.telegram-app .telegram-finance {
+.telegram-app {
   --background: var(--tg-card);
   --foreground: var(--tg-text);
   --card: var(--tg-card);
   --card-foreground: var(--tg-text);
+  --popover: var(--tg-card);
+  --popover-foreground: var(--tg-text);
   --muted: var(--tg-card-muted);
   --muted-foreground: var(--tg-text-secondary);
   --border: var(--tg-border);
@@ -210,3 +214,22 @@
     transition: none;
   }
 }
+
+/* Finger-sized controls on narrow screens; keep dense desktop tables compact. */
+@media (max-width: 767px), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; }
+  a.inline-flex, label[for="order-files"], select, button:not([role="checkbox"]):not([data-slot="sidebar-rail"]), [data-slot="button"], [data-slot="input"]:not([type="file"]),
+  [data-slot="select-trigger"], [data-slot="dropdown-menu-trigger"],
+  [data-slot="pagination-link"], [data-slot="command-item"] {
+    min-height: 44px;
+  }
+  [data-slot="button"][data-size^="icon"], button[aria-label]:not([role="checkbox"]) { min-width: 44px; }
+  button[role="checkbox"] { width: 32px; height: 32px; }
+  label:has([role="checkbox"]) { min-height: 44px; }
+}
+.telegram-app .text-primary { color: var(--tg-link); }
+.telegram-app [data-slot="textarea"], .telegram-app [data-slot="input"] {
+  background: var(--tg-card); color: var(--tg-text); border-color: var(--tg-border);
+}
+.telegram-app .text-muted-foreground { color: var(--tg-text-secondary); }
+.telegram-app .bg-card, .telegram-app .bg-background { background-color: var(--tg-card); color: var(--tg-text); }

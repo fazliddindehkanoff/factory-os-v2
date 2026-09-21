@@ -2,7 +2,7 @@ import { notFound } from "next/navigation"
 
 import { TelegramSettings } from "@/components/telegram/telegram-settings"
 import { TelegramShell } from "@/components/telegram/telegram-shell"
-import { requireSession } from "@/lib/auth/session"
+import { requireTelegramSession } from "@/lib/auth/session"
 import { isLocale } from "@/lib/i18n"
 import { telegramCopy } from "@/lib/telegram-copy"
 import { getTelegramUserProfile } from "@/lib/telegram-orders"
@@ -10,7 +10,7 @@ import { getTelegramUserProfile } from "@/lib/telegram-orders"
 export default async function Page({ params }: PageProps<"/[lang]/telegram/settings">) {
   const { lang } = await params
   if (!isLocale(lang)) notFound()
-  const session = await requireSession(lang)
+  const session = await requireTelegramSession(lang, `/${lang}/telegram/settings`)
   const copy = telegramCopy[lang]
   const profile = await getTelegramUserProfile(session.userId, lang)
   if (!profile) notFound()

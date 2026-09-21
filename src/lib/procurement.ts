@@ -11,6 +11,7 @@ export type ProcurementStage = (typeof procurementStages)[number]
 export type SupplierStatus = "active" | "archived"
 
 export type SupplierRecord = {
+  revision?: number
   id: string
   name: string
   inn: string

@@ -4,12 +4,15 @@ import { after, NextResponse } from "next/server"
 
 import { db } from "@/db/client"
 import {
+  appRecords,
   notifications,
   orderCommentMentions,
   orderComments,
   users,
 } from "@/db/schema"
-import { userHasPermission } from "@/lib/auth/authorization"
+import { canReadOrderWithSettings } from "@/lib/order-access"
+import { getSettingsData } from "@/lib/settings-data"
+import type { OrderRecord } from "@/lib/orders"
 import { getSessionUser } from "@/lib/auth/session"
 import { containsUserMention } from "@/lib/mentions"
 import { normalizeOrderCommentBody } from "@/lib/orders"
@@ -20,12 +23,13 @@ export const dynamic = "force-dynamic"
 
 const MAX_MENTIONS = 20
 
-async function canUseOrderChat(userId: string) {
-  const permissions = await Promise.all([
-    userHasPermission(userId, "requests.view"),
-    userHasPermission(userId, "requests.view_own"),
-  ])
-  return permissions.some(Boolean)
+async function canUseOrderChat(userId: string, orderId: string) {
+  const [row] = await db.select().from(appRecords).where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, orderId)))
+  const order = row?.payload as OrderRecord | undefined
+  if (!order || order.archivedAt) return false
+  if (canReadOrderWithSettings(order, userId, await getSettingsData())) return true
+  const [mention] = await db.select({ id: orderComments.id }).from(orderCommentMentions).innerJoin(orderComments, eq(orderComments.id, orderCommentMentions.commentId)).where(and(eq(orderCommentMentions.userId, userId), eq(orderComments.orderId, orderId))).limit(1)
+  return Boolean(mention)
 }
 
 function validShortId(value: unknown) {
@@ -35,15 +39,13 @@ function validShortId(value: unknown) {
 export async function GET(request: Request) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-  if (!(await canUseOrderChat(session.userId))) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 })
-  }
 
   const orderId = new URL(request.url).searchParams.get("orderId")
   if (!validShortId(orderId)) {
     return NextResponse.json({ error: "invalid-order" }, { status: 400 })
   }
 
+  if (!(await canUseOrderChat(session.userId, orderId!))) return NextResponse.json({ error: "forbidden" }, { status: 403 })
   const rows = await db.select().from(orderComments)
     .where(eq(orderComments.orderId, orderId!))
     .orderBy(asc(orderComments.createdAt))
@@ -71,9 +73,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-  if (!(await canUseOrderChat(session.userId))) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 })
-  }
 
   let raw: unknown
   try {
@@ -96,6 +95,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid-comment" }, { status: 400 })
   }
 
+  if (!(await canUseOrderChat(session.userId, orderId as string))) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  if (replyToId) {
+    const [reply] = await db.select({ id: orderComments.id }).from(orderComments).where(and(eq(orderComments.id, replyToId as string), eq(orderComments.orderId, orderId as string)))
+    if (!reply) return NextResponse.json({ error: "invalid-reply" }, { status: 400 })
+  }
   const [author] = await db.select({
     id: users.id,
     fullName: users.fullName,

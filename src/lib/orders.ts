@@ -118,7 +118,11 @@ export function formatWorkflowNotification(
   locale: "uz" | "ru" | "tr",
 ) {
   const event = notification.event ?? inferLegacyNotificationEvent(notification.message)
-  if (!event) return notification.message ?? ""
+  if (!event) {
+    const mention = notification.message?.match(/^(.+) sizni izohda belgiladi:\s*([\s\S]*)$/)
+    if (mention) return locale === "ru" ? `${mention[1]} упомянул(а) вас: ${mention[2]}` : locale === "tr" ? `${mention[1]} sizden bahsetti: ${mention[2]}` : notification.message!
+    return notification.message ?? ""
+  }
 
   const copy = {
     uz: {
@@ -180,6 +184,26 @@ export function formatWorkflowNotification(
 
 function inferLegacyNotificationEvent(message?: string): WorkflowNotificationEvent | undefined {
   if (!message) return undefined
+  const simple: Record<string, WorkflowNotificationEvent> = {
+    "Buyurtma sizning amalingizni kutmoqda.": { kind: "action_required" },
+    "Buyurtma joriy bosqichda tasdiqlandi.": { kind: "step_approved" },
+    "Buyurtma rad etildi.": { kind: "rejected" },
+    "Buyurtma ombor zaxirasidan to‘liq ta’minlandi va yopildi.": { kind: "warehouse_fulfilled" },
+    "Ombor hisoboti tayyor.": { kind: "warehouse_report_ready" },
+    "Ta’minot rahbari tijorat taklifini tasdiqladi.": { kind: "procurement_offer_approved" },
+  }
+  if (simple[message]) return simple[message]
+  const actorPatterns = [
+    [/^(.+) buyurtmani tasdiqladi\.$/, "approved_by"],
+    [/^(.+) sizga xarid pozitsiyalarini biriktirdi\.$/, "procurement_assigned"],
+    [/^(.+) tijorat takliflarini tekshiruvga yubordi\.$/, "procurement_offers_submitted"],
+  ] as const
+  for (const [pattern, kind] of actorPatterns) { const match = message.match(pattern); if (match) return { kind, actorName: match[1] } }
+  const uzPartial = message.match(/^(\d+) pozitsiyadan (\d+) tasi ombordan/)
+  if (uzPartial) return { kind: "warehouse_partial", totalCount: Number(uzPartial[1]), fulfilledCount: Number(uzPartial[2]) }
+  const uzRejected = message.match(/^Tijorat taklifi qayta ishlash uchun qaytarildi: ([\s\S]*)$/)
+  if (uzRejected) return { kind: "procurement_offer_rejected", comment: uzRejected[1] }
+
   if (message.includes("is waiting for your action") || message.includes("is now waiting for your action")) {
     return { kind: "action_required" }
   }
@@ -197,6 +221,8 @@ function inferLegacyNotificationEvent(message?: string): WorkflowNotificationEve
 }
 
 export type OrderRecord = {
+  archivedAt?: string
+  revision?: number
   id: string
   number: string
   createdByUserId: string
@@ -433,7 +459,7 @@ export function getProcurementSuborderForSpecialist(
 
 /** Root containers remain available for history, but are not counted twice. */
 export function isOperationalOrder(order: OrderRecord) {
-  return !order.procurementSplit || getUnassignedProcurementLines(order).length > 0
+  return !order.archivedAt && (!order.procurementSplit || getUnassignedProcurementLines(order).length > 0)
 }
 
 export function createProcurementChild(
@@ -669,4 +695,17 @@ export function canUserViewRejectedOrder(
     userId &&
       [order.createdByUserId, supervisorUserId ?? order.applicantId].includes(userId),
   )
+}
+
+
+/** One visibility policy shared by API, web and Telegram. */
+export function canReadOrder(order: OrderRecord, actor: {
+  userId: string; canViewAll: boolean; canViewOwn: boolean;
+  departmentIds: string[]; roleCodes: string[]; supervisorUserId?: string;
+}) {
+  if (order.archivedAt || (!actor.canViewAll && !actor.canViewOwn)) return false
+  if (!actor.canViewAll && ![order.createdByUserId, order.applicantId].includes(actor.userId)) return false
+  if (actor.roleCodes.includes("dept_head") && !order.departmentIds.some((id) => actor.departmentIds.includes(id))) return false
+  if (actor.roleCodes.includes("procurement_manager") && !actor.roleCodes.includes("procurement_head") && !isOrderAssignedToProcurementSpecialist(order, actor.userId)) return false
+  return canUserViewRejectedOrder(order, actor.userId, actor.supervisorUserId)
 }

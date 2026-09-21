@@ -19,6 +19,9 @@ import { cn } from "@/lib/utils"
 export type MultiSelectOption = { value: string; label: string }
 
 export function SearchableMultiSelect({
+  id,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedby,
   options,
   value,
   onChange,
@@ -31,6 +34,9 @@ export function SearchableMultiSelect({
   ariaLabel,
   disabled = false,
 }: {
+  id?: string
+  "aria-invalid"?: boolean
+  "aria-describedby"?: string
   options: MultiSelectOption[]
   value: string[]
   onChange: (value: string[]) => void
@@ -59,6 +65,9 @@ export function SearchableMultiSelect({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
+        id={id}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedby}
         type="button"
         disabled={disabled}
         aria-label={ariaLabel}

@@ -21,6 +21,6 @@ export function matchesTelegramOrderFilters(order: TelegramOrderSummary, values:
     && (!values.urgency || (values.urgency === "urgent-group"
       ? order.urgency === "urgent" || order.urgency === "critical"
       : order.urgency === values.urgency))
-    && (!values.department || order.department === values.department)
-    && (!values.warehouse || order.warehouse === values.warehouse)
+    && (!values.department || order.departmentIds.includes(values.department))
+    && (!values.warehouse || order.warehouseId === values.warehouse)
 }

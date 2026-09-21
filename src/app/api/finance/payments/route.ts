@@ -48,6 +48,7 @@ export async function POST(request: Request) {
         for (const orderId of new Set([...updates.values()].map((payment) => payment.orderId))) {
           const row = orders.find((row) => row.id === orderId)!
           const order = cancelFinanceOrder(row.order, actor.userId, now, body.comment.trim())
+          order.revision = (order.revision ?? 0) + 1
           const changed = await tx.update(appRecords).set({ payload: order as unknown as Record<string, unknown>, updatedAt: now })
             .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, orderId), eq(appRecords.updatedAt, row.updatedAt)))
           if (changed.rowsAffected !== 1) throw new Error("payment-changed")

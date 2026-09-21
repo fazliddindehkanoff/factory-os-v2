@@ -1,10 +1,15 @@
+import { stepLabel } from "@/lib/order-labels"
+import { TelegramOrderActions } from "@/components/telegram/telegram-order-actions"
+import { OrderComments } from "@/components/orders/order-comments"
+import { uxCopy } from "@/lib/ux-copy"
+import { messages } from "@/lib/i18n"
 import Link from "next/link"
-import { ArrowLeftIcon, BoxIcon, CircleDotIcon, HashIcon, MessageCircleMoreIcon, ReplyIcon } from "lucide-react"
+import { ArrowLeftIcon, BoxIcon, HashIcon } from "lucide-react"
 import { notFound } from "next/navigation"
 
-import { TelegramStatusPill, telegramStatusVisual } from "@/components/telegram/telegram-order-card"
+import { TelegramStatusPill } from "@/components/telegram/telegram-order-card"
 import { TelegramShell } from "@/components/telegram/telegram-shell"
-import { requireSession } from "@/lib/auth/session"
+import { requireTelegramSession } from "@/lib/auth/session"
 import { isLocale } from "@/lib/i18n"
 import { telegramCopy } from "@/lib/telegram-copy"
 import { getMentionedOrderDiscussion, getTelegramOrder } from "@/lib/telegram-orders"
@@ -13,7 +18,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
   const { lang, id } = await params
   const query = await searchParams
   if (!isLocale(lang)) notFound()
-  const session = await requireSession(lang)
+  const session = await requireTelegramSession(lang, `/${lang}/telegram/orders/${encodeURIComponent(id)}${typeof query.comment === "string" ? `?comment=${encodeURIComponent(query.comment)}` : ""}`)
   const copy = telegramCopy[lang]
   const order = await getTelegramOrder(session.userId, id, lang)
   const localeTag = lang === "ru" ? "ru-RU" : lang === "tr" ? "tr-TR" : "uz-UZ"
@@ -25,25 +30,24 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
     if (value && value.length <= 160) safeReturnParams.set(key, value)
   }
   const backQuery = safeReturnParams.toString()
-  const highlightedCommentId = typeof query.comment === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(query.comment)
-    ? query.comment
-    : undefined
 
   if (!order) {
     const discussion = await getMentionedOrderDiscussion(session.userId, id)
     if (!discussion) notFound()
     return (
       <TelegramShell lang={lang} copy={copy} userId={session.userId} title={discussion.orderNumber} subtitle={telegramDiscussionCopy[lang]}>
-        <Link href={`/${lang}/telegram/notifications`} className="mb-3 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-xl px-2 text-[13px] font-semibold text-[#2d7dd2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#e7f1fb]"><ArrowLeftIcon className="size-4" />{copy.notifications}</Link>
-        <TelegramDiscussion comments={discussion.comments} highlightedCommentId={highlightedCommentId} localeTag={localeTag} lang={lang} />
+        <Link href={`/${lang}/telegram/notifications`} className="mb-3 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-xl px-2 text-[13px] font-semibold text-[var(--tg-link,#2365a9)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#e7f1fb]"><ArrowLeftIcon className="size-4" />{copy.notifications}</Link>
+        <OrderComments order={{ id, number: discussion.orderNumber }} lang={lang} messages={messages[lang]} />
       </TelegramShell>
     )
   }
 
   const formatDate = (value: string) => new Intl.DateTimeFormat(localeTag, { day: "2-digit", month: "long", year: "numeric" }).format(new Date(value))
-  const visual = telegramStatusVisual[order.status]
+
 
   const facts = [
+    [uxCopy[lang].currentStep, stepLabel(order.currentStep, lang)],
+    [uxCopy[lang].responsible, order.waitingFor || "—"],
     [copy.applicant, order.applicant],
     [copy.department, order.department],
     [copy.warehouse, order.warehouse],
@@ -56,7 +60,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
 
   return (
     <TelegramShell lang={lang} copy={copy} userId={session.userId} title={order.number} subtitle={copy.status[order.status]}>
-      <Link href={`/${lang}/telegram/orders${backQuery ? `?${backQuery}` : ""}#orders`} className="mb-3 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-xl px-2 text-[13px] font-semibold text-[#2d7dd2] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#e7f1fb]">
+      <Link href={typeof query.back === "string" && query.back.startsWith(`/${lang}/telegram/finance`) && !query.back.includes("\\") ? query.back : `/${lang}/telegram/orders${backQuery ? `?${backQuery}` : ""}#orders`} className="mb-3 inline-flex min-h-11 touch-manipulation items-center gap-2 rounded-xl px-2 text-[13px] font-semibold text-[var(--tg-link,#2365a9)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#e7f1fb]">
         <ArrowLeftIcon className="size-4" />{copy.backToOrders}
       </Link>
 
@@ -69,7 +73,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
       <section className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.06),0_8px_22px_-14px_rgba(16,30,60,0.18)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-[11px] font-semibold tracking-wide text-[#2d7dd2]">{order.number}</p>
+            <p className="font-mono text-[11px] font-semibold tracking-wide text-[var(--tg-link,#2365a9)]">{order.number}</p>
             <h2 className="mt-1 text-lg font-bold leading-6 text-[var(--tg-text)]">{order.purpose}</h2>
           </div>
           <TelegramStatusPill order={order} copy={copy} />
@@ -86,19 +90,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
         </div>
       </section>
 
-      <section className="mt-5">
-        <h2 className="mb-2.5 px-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--tg-text-secondary)]">{copy.orderProgress}</h2>
-        <div className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
-          <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="flex min-w-0 items-center gap-2 font-semibold" style={{ color: visual.color }}><CircleDotIcon className="size-4 shrink-0" />{copy.status[order.status]}</span>
-            <span className="font-mono font-semibold tabular-nums text-[var(--tg-text-muted)]">{visual.progress}%</span>
-          </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e7ecf3]">
-            <span className="block h-full rounded-full" style={{ width: `${visual.progress}%`, background: visual.color }} />
-          </div>
-        </div>
-      </section>
-
+      <TelegramOrderActions id={id} lang={lang} />
       <section className="mt-5">
         <h2 className="mb-2.5 px-0.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--tg-text-secondary)]">{copy.orderInformation}</h2>
         <dl className="tg-card divide-y divide-[var(--tg-divider)] rounded-[14px] border px-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
@@ -118,7 +110,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
         </section>
       ) : null}
 
-      {order.comments.length ? <TelegramDiscussion comments={order.comments} highlightedCommentId={highlightedCommentId} localeTag={localeTag} lang={lang} /> : null}
+      <OrderComments order={{ id, number: order.number }} lang={lang} messages={messages[lang]} />
 
       <section className="mt-4">
         <div className="mb-2.5 flex items-center justify-between px-0.5">
@@ -129,7 +121,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
           {order.lines.map((line, index) => (
             <article key={line.id} className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
               <div className="flex items-start gap-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-[#e7f1fb] text-[#2d7dd2]"><BoxIcon className="size-4" /></span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-[#e7f1fb] text-[var(--tg-link,#2365a9)]"><BoxIcon className="size-4" /></span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-bold leading-5 text-[var(--tg-text)]">{index + 1}. {line.product}</p>
                   <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--tg-text-muted)]"><HashIcon className="size-3.5" />{copy.quantity}: <span className="font-mono font-semibold tabular-nums text-[var(--tg-text-secondary)]">{line.quantity} {line.unit}</span></div>
@@ -149,36 +141,3 @@ const telegramDiscussionCopy = {
   ru: "Обсуждение",
   tr: "Tartışma",
 } as const
-
-function TelegramDiscussion({
-  comments,
-  highlightedCommentId,
-  localeTag,
-  lang,
-}: {
-  comments: Array<{ id: string; authorName: string; body: string; replyToId?: string; createdAt: string }>
-  highlightedCommentId?: string
-  localeTag: string
-  lang: keyof typeof telegramDiscussionCopy
-}) {
-  return (
-    <section className="mt-5">
-      <div className="mb-2.5 flex items-center justify-between px-0.5">
-        <h2 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--tg-text-secondary)]"><MessageCircleMoreIcon className="size-3.5" />{telegramDiscussionCopy[lang]}</h2>
-        <span className="font-mono text-[11px] font-semibold text-[var(--tg-text-muted)]">{comments.length}</span>
-      </div>
-      <div className="grid gap-2.5">
-        {comments.map((comment) => {
-          const replied = comment.replyToId ? comments.find((item) => item.id === comment.replyToId) : undefined
-          return (
-            <article id={`order-comment-${comment.id}`} key={comment.id} className={`tg-card scroll-m-4 rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)] ${highlightedCommentId === comment.id ? "ring-2 ring-[#2d7dd2] ring-offset-2" : ""}`}>
-              <div className="flex items-baseline justify-between gap-3"><p className="min-w-0 truncate text-[13px] font-bold text-[#2d7dd2]">{comment.authorName}</p><time className="shrink-0 font-mono text-[10px] text-[var(--tg-text-muted)]">{new Intl.DateTimeFormat(localeTag, { dateStyle: "short", timeStyle: "short" }).format(new Date(comment.createdAt))}</time></div>
-              {replied ? <div className="mt-2 rounded-lg border-l-2 border-[#2d7dd2] bg-[#edf4fc] px-2.5 py-2 text-[11px] text-[var(--tg-text-secondary)]"><span className="mb-0.5 flex items-center gap-1 font-semibold text-[#2d7dd2]"><ReplyIcon className="size-3" />{replied.authorName}</span><span className="line-clamp-2">{replied.body}</span></div> : null}
-              <p className="mt-2 whitespace-pre-wrap break-words text-[13px] leading-5 text-[var(--tg-text)]">{comment.body}</p>
-            </article>
-          )
-        })}
-      </div>
-    </section>
-  )
-}

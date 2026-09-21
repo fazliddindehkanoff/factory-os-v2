@@ -34,7 +34,7 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
   }, [lang, router])
 
   return (
-    <nav aria-label="Telegram Mini App" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[560px] border-t border-[var(--tg-border)] bg-[color-mix(in_srgb,var(--tg-card)_95%,transparent)] pb-[max(env(safe-area-inset-bottom),0.5rem)] shadow-[0_-2px_14px_-8px_rgba(16,30,60,0.22)] backdrop-blur-md">
+    <nav aria-label="Telegram Mini App" className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-[560px] border-t border-[var(--tg-border)] bg-[color-mix(in_srgb,var(--tg-card)_95%,transparent)] pb-[max(env(safe-area-inset-bottom),var(--tg-content-safe-area-inset-bottom,0px),0.5rem)] shadow-[0_-2px_14px_-8px_rgba(16,30,60,0.22)] backdrop-blur-md">
       <div className={cn("grid h-16 px-2", canViewFinance ? "grid-cols-5" : "grid-cols-4")}>
         {items.map((item) => {
           const Icon = item.icon
@@ -45,8 +45,8 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
               scroll={false}
               aria-current={item.active ? "page" : undefined}
               className={cn(
-                "flex min-h-12 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#e7f1fb]",
-                item.active ? "font-bold text-[#2d7dd2]" : "text-[#8b97aa]",
+                "flex min-h-12 touch-manipulation flex-col items-center justify-center gap-1 rounded-xl text-[12px] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:bg-[#e7f1fb]",
+                item.active ? "font-bold bg-[var(--tg-card-muted)] text-[var(--tg-link)]" : "text-[var(--tg-text-secondary)]",
               )}
             >
               <TelegramNavItem icon={Icon} label={item.label} active={item.active} />
@@ -75,7 +75,7 @@ function TelegramNavItem({
         <Icon className={cn("size-[22px]", pending && "opacity-0")} strokeWidth={active ? 2.35 : 1.9} />
         {pending ? <LoaderCircleIcon className="absolute size-5 animate-spin motion-reduce:animate-none" strokeWidth={2.2} /> : null}
       </span>
-      <span>{label}</span>
+      <span className="max-w-full text-center leading-tight [overflow-wrap:anywhere]">{label}</span>
     </>
   )
 }

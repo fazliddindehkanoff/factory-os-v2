@@ -1,6 +1,9 @@
 "use client"
 
+import { OrderAgingChart } from "./order-aging-chart"
+import { telegramCopy } from "@/lib/telegram-copy"
 import Link from "next/link"
+import { uxCopy } from "@/lib/ux-copy"
 import {
   ArrowRightIcon,
   CheckCircle2Icon,
@@ -20,40 +23,20 @@ import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Locale, Messages } from "@/lib/i18n"
-import { canUserViewRejectedOrder, isOperationalOrder, isOrderAssignedToProcurementSpecialist, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
+import { isOperationalOrder, isOrderSuccessfullyClosed, isOrderWaitingForUser, type OrderStatus, type UrgencyLevel } from "@/lib/orders"
 import { getLocalizedTitle } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
 export function DashboardOverview({ lang, messages }: { lang: Locale; messages: Messages }) {
-  const { orders: allOrders } = useOrders()
+  const { orders: allOrders, storageReady, syncError, lastUpdated } = useOrders()
   const orders = allOrders.filter(isOperationalOrder)
   const { data } = useSettings()
   const { can, canViewOrders, canViewSettingsSection, currentUser } = useAuthorization()
-  const ownOnly = !can("requests.view") && can("requests.view_own")
-  const departmentScoped = currentUser?.roleIds.includes("role-dept_head") ?? false
-  const procurementSpecialistScoped = currentUser?.roleIds.includes("role-procurement_manager") ?? false
-  const visibleAfterRejection = (order: (typeof orders)[number]) => {
-    const supervisorUserId = data.users.find(
-      (user) =>
-        user.roleIds.includes("role-dept_head") &&
-        user.departmentIds.some((id) => order.departmentIds.includes(id)),
-    )?.id
-    return canUserViewRejectedOrder(order, currentUser?.id, supervisorUserId)
-  }
-  const permittedOrders = canViewOrders
-    ? orders.filter((order) =>
-        (!ownOnly || order.createdByUserId === currentUser?.id) &&
-        (!departmentScoped || order.departmentIds.some((id) => currentUser?.departmentIds.includes(id))) &&
-        (!procurementSpecialistScoped || isOrderAssignedToProcurementSpecialist(order, currentUser?.id)) &&
-        visibleAfterRejection(order),
-      )
-    : []
+  const procurementSpecialistScoped = Boolean(currentUser?.roleIds.includes("role-procurement_manager") && !currentUser?.roleIds.includes("role-procurement_head"))
   const showOperationalSummary = can("reports.status_summary")
-  const visibleOrders = showOperationalSummary
-    ? permittedOrders
-    : permittedOrders.filter((order) => order.createdByUserId === currentUser?.id)
+  const visibleOrders = canViewOrders ? orders : []
   const awaitingCount = visibleOrders.filter((order) => order.status === "warehouse_check").length
-  const urgentCount = visibleOrders.filter((order) => order.urgency === "urgent" || order.urgency === "critical").length
+  const urgentCount = visibleOrders.filter((order) => order.currentStep !== "complete" && (order.urgency === "urgent" || order.urgency === "critical")).length
   const approvedCount = visibleOrders.filter((order) => order.status === "approved").length
   const successfullyClosedCount = visibleOrders.filter(isOrderSuccessfullyClosed).length
   const waitingForMeCount = orders.filter((order) => {
@@ -78,6 +61,9 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
   ]
 
   const pipeline: Array<{ status: OrderStatus; count: number; color: string }> = [
+    { status: "supervisor_review", count: visibleOrders.filter((order) => order.status === "supervisor_review").length, color: "bg-amber-600" },
+    { status: "in_progress", count: visibleOrders.filter((order) => order.status === "in_progress").length, color: "bg-blue-600" },
+    { status: "fulfilled", count: visibleOrders.filter((order) => order.status === "fulfilled").length, color: "bg-emerald-600" },
     { status: "warehouse_check", count: awaitingCount, color: "bg-amber-500" },
     { status: "approved", count: approvedCount, color: "bg-primary" },
     { status: "rejected", count: visibleOrders.filter((order) => order.status === "rejected").length, color: "bg-destructive" },
@@ -87,9 +73,11 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
   const warehouseWorkload = data.warehouses.map((warehouse) => ({
     id: warehouse.id,
     title: getLocalizedTitle(warehouse, lang),
-    count: visibleOrders.filter((order) => order.warehouseId === warehouse.id).length,
+    count: visibleOrders.filter((order) => order.warehouseId === warehouse.id && order.currentStep !== "complete").length,
   }))
   const maxWarehouseCount = Math.max(1, ...warehouseWorkload.map((warehouse) => warehouse.count))
+
+  if (!storageReady) return <p role="status" className="p-6">{uxCopy[lang].loading}</p>
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 pb-8 md:px-6">
@@ -111,7 +99,7 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
         ))}
       </div>
 
-      {showOperationalSummary ? <div className="grid gap-4 xl:grid-cols-7">
+      {showOperationalSummary && visibleOrders.length > 0 ? <div className="grid gap-4 xl:grid-cols-7">
         <section className="rounded-xl border bg-card p-5 shadow-xs xl:col-span-4">
           <SectionHeader title={messages.orderPipeline} description={messages.orderPipelineDescription} />
           <div className="mt-6 space-y-5">
@@ -120,7 +108,7 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
               return (
                 <div key={item.status}>
                   <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                    <span className="font-medium">{statusLabel(item.status, messages)}</span>
+                    <span className="font-medium">{statusLabel(item.status, lang)}</span>
                     <span className="tabular-nums text-muted-foreground">{item.count} · {percentage}%</span>
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-muted" aria-hidden="true">
@@ -159,6 +147,8 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
         </section>
       </div> : null}
 
+      {showOperationalSummary && lastUpdated ? <OrderAgingChart orders={visibleOrders} lang={lang} now={new Date(lastUpdated).getTime()} /> : null}
+
       <div className="grid gap-4 xl:grid-cols-7">
         <section className="min-w-0 rounded-xl border bg-card p-5 shadow-xs xl:col-span-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -180,16 +170,17 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {!recentOrders.length ? <TableRow><TableCell colSpan={5} className="py-10 text-center">{syncError ? uxCopy[lang].stale : uxCopy[lang].emptyOrders}{can("requests.create") && !syncError ? <Link href={`/${lang}/orders/new`} className="mt-3 block underline">{uxCopy[lang].firstOrder}</Link> : null}</TableCell></TableRow> : null}
                 {recentOrders.map((order) => {
                   const applicant = data.users.find((user) => user.id === order.applicantId)
                   const warehouse = data.warehouses.find((item) => item.id === order.warehouseId)
                   return (
                     <TableRow key={order.id}>
-                      <TableCell className="font-medium">{order.number}</TableCell>
+                      <TableCell className="font-medium"><Link className="underline" href={`/${lang}/orders?order=${encodeURIComponent(order.id)}`}>{order.number}</Link></TableCell>
                       <TableCell>{applicant?.fullName ?? "—"}</TableCell>
                       <TableCell>{warehouse ? getLocalizedTitle(warehouse, lang) : "—"}</TableCell>
                       <TableCell><UrgencyBadge urgency={order.urgency} messages={messages} /></TableCell>
-                      <TableCell><StatusBadge status={order.status} messages={messages} /></TableCell>
+                      <TableCell><StatusBadge status={order.status} lang={lang} /></TableCell>
                     </TableRow>
                   )
                 })}
@@ -199,7 +190,7 @@ export function DashboardOverview({ lang, messages }: { lang: Locale; messages: 
         </section>
 
         <aside className="rounded-xl border bg-card p-5 shadow-xs xl:col-span-2">
-          <SectionHeader title={messages.quickActions} description={messages.updatedNow} />
+          <SectionHeader title={messages.quickActions} description={syncError ? uxCopy[lang].stale : lastUpdated ? `${uxCopy[lang].updated}: ${new Date(lastUpdated).toLocaleTimeString(lang)}` : uxCopy[lang].loading} />
           <div className="mt-5 space-y-2">
             {can("requests.create") ? <QuickAction href={`/${lang}/orders/new`} icon={PlusIcon} label={messages.createNewOrder} /> : null}
             {canViewOrders ? <QuickAction href={`/${lang}/orders`} icon={ClipboardListIcon} label={messages.viewAllOrders} /> : null}
@@ -265,16 +256,9 @@ function QuickAction({ href, icon: Icon, label }: { href: string; icon: typeof P
   )
 }
 
-function statusLabel(status: OrderStatus, messages: Messages) {
-  if (status === "warehouse_check") return messages.statusWarehouseCheck
-  if (status === "approved") return messages.statusApproved
-  if (status === "rejected") return messages.statusRejected
-  return messages.statusDraft
-}
-
-function StatusBadge({ status, messages }: { status: OrderStatus; messages: Messages }) {
-  const variant = status === "rejected" ? "destructive" : status === "approved" ? "default" : status === "draft" ? "outline" : "secondary"
-  return <Badge variant={variant}>{statusLabel(status, messages)}</Badge>
+function statusLabel(status: OrderStatus, lang: Locale) { return telegramCopy[lang].status[status] }
+function StatusBadge({ status, lang }: { status: OrderStatus; lang: Locale }) {
+  return <Badge variant={status === "rejected" ? "destructive" : "secondary"}>{statusLabel(status, lang)}</Badge>
 }
 
 function UrgencyBadge({ urgency, messages }: { urgency: UrgencyLevel; messages: Messages }) {

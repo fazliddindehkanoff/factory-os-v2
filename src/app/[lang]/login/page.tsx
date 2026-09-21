@@ -73,10 +73,10 @@ export default async function Page({
   if (!isLocale(lang)) notFound()
 
   const session = await getSessionUser()
-  if (session) redirect(`/${lang}/dashboard`)
 
   const nextValue = (await searchParams).next
-  const returnTo = typeof nextValue === "string" ? nextValue : undefined
+  const returnTo = typeof nextValue === "string" && nextValue.startsWith(`/${lang}/`) && !nextValue.includes("\\") ? nextValue : undefined
+  if (session) redirect(returnTo ?? `/${lang}/dashboard`)
 
   return (
     <main className="relative flex min-h-svh w-full items-center justify-center overflow-hidden bg-background p-4 sm:p-6 md:p-10">

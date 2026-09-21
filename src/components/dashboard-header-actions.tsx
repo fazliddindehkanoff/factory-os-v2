@@ -1,5 +1,7 @@
 "use client"
 
+import * as React from "react"
+import { uxCopy } from "@/lib/ux-copy"
 import { usePathname, useRouter } from "next/navigation"
 import { BellIcon, CheckIcon, LanguagesIcon } from "lucide-react"
 
@@ -31,6 +33,7 @@ export function DashboardHeaderActions({
   lang: Locale
   messages: Messages
 }) {
+  const [markError, setMarkError] = React.useState(false)
   const pathname = usePathname()
   const router = useRouter()
   const { currentUser } = useAuthorization()
@@ -39,12 +42,17 @@ export function DashboardHeaderActions({
   const unreadCount = userNotifications.filter((item) => !item.read).length
 
   function changeLanguage(locale: Locale) {
+    void fetch("/api/preferences", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale: locale }), keepalive: true }).catch(() => {})
     const segments = pathname.split("/")
     segments[1] = locale
-    router.push(segments.join("/"))
+    const search = new URLSearchParams(window.location.search)
+    for (const key of ["return", "back", "next"]) { const value = search.get(key); if (value?.startsWith(`/${lang}/`)) search.set(key, value.replace(`/${lang}/`, `/${locale}/`)) }
+    router.push(`${segments.join("/")}${search.size ? `?${search}` : ""}${window.location.hash}`)
   }
 
-  function openNotification(orderId: string, commentId?: string) {
+  async function openNotification(id: string, orderId: string, commentId?: string) {
+    if (!await markNotificationsRead([id])) { setMarkError(true); return }
+    setMarkError(false)
     if (commentId) {
       router.push(`/${lang}/orders/discussion/${encodeURIComponent(orderId)}?comment=${encodeURIComponent(commentId)}#order-comment-${encodeURIComponent(commentId)}`)
       return
@@ -91,7 +99,6 @@ export function DashboardHeaderActions({
         <DropdownMenuTrigger
           aria-label={messages.notifications}
           className={buttonVariants({ variant: "ghost", size: "icon", className: "relative" })}
-          onClick={markNotificationsRead}
         >
           <BellIcon />
           {unreadCount ? <span className="absolute -right-0.5 -top-0.5 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">{unreadCount > 9 ? "9+" : unreadCount}</span> : null}
@@ -101,7 +108,9 @@ export function DashboardHeaderActions({
             <DropdownMenuLabel>{messages.notifications}</DropdownMenuLabel>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
-          {userNotifications.length ? <div className="max-h-80 overflow-y-auto p-1">{userNotifications.map((notification) => <DropdownMenuItem key={notification.id} className="block cursor-pointer whitespace-normal px-2 py-2" onClick={() => openNotification(notification.orderId, notification.commentId)}><p className="text-xs font-semibold text-primary">{notification.orderNumber}</p><p className="mt-0.5 text-xs leading-relaxed">{formatWorkflowNotification(notification, lang)}</p></DropdownMenuItem>)}</div> : <p className="px-3 py-6 text-center text-sm text-muted-foreground">{messages.noNotifications}</p>}
+          {markError ? <p role="alert" className="p-3 text-sm text-destructive">{uxCopy[lang].markFailed}</p> : null}
+          {unreadCount ? <DropdownMenuItem onSelect={(event) => { event.preventDefault(); void markNotificationsRead().then((ok) => setMarkError(!ok)) }}>{uxCopy[lang].markAll}</DropdownMenuItem> : null}
+          {userNotifications.length ? <div className="max-h-80 overflow-y-auto p-1">{userNotifications.map((notification) => <DropdownMenuItem key={notification.id} className="block cursor-pointer whitespace-normal px-2 py-2" onSelect={(event) => { event.preventDefault(); void openNotification(notification.id, notification.orderId, notification.commentId) }}><p className="text-xs font-semibold text-primary">{!notification.read ? "● " : ""}{notification.orderNumber}</p><p className="mt-0.5 text-xs leading-relaxed">{formatWorkflowNotification(notification, lang)}</p></DropdownMenuItem>)}</div> : <p className="px-3 py-6 text-center text-sm text-muted-foreground">{messages.noNotifications}</p>}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

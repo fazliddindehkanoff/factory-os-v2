@@ -199,7 +199,7 @@ export function TelegramSettings({
           <div className="relative shrink-0">
             <Avatar className="size-[76px] rounded-[20px] text-xl">
               <AvatarImage className="rounded-[20px]" src={`/api/profile/photo?v=${avatarVersion}`} alt={profile.fullName} />
-              <AvatarFallback className="rounded-[20px] bg-[#e7f1fb] font-bold text-[#2d7dd2]">{initials(profile.fullName)}</AvatarFallback>
+              <AvatarFallback className="rounded-[20px] bg-[#e7f1fb] font-bold text-[var(--tg-link,#2365a9)]">{initials(profile.fullName)}</AvatarFallback>
             </Avatar>
             <span className="absolute -bottom-1 -right-1 flex size-7 items-center justify-center rounded-[9px] border-2 border-white bg-[#2d7dd2] text-white">
               <CameraIcon className="size-3.5" />
@@ -214,7 +214,7 @@ export function TelegramSettings({
           </div>
         </div>
         <label className="tg-secondary-button mt-4 flex min-h-11 cursor-pointer touch-manipulation items-center justify-center gap-2 rounded-[11px] border px-4 text-[13px] font-bold transition-opacity active:opacity-75">
-          {uploadingPhoto ? <LoaderCircleIcon className="size-4 animate-spin motion-reduce:animate-none" /> : <CameraIcon className="size-4 text-[#2d7dd2]" />}
+          {uploadingPhoto ? <LoaderCircleIcon className="size-4 animate-spin motion-reduce:animate-none" /> : <CameraIcon className="size-4 text-[var(--tg-link,#2365a9)]" />}
           {uploadingPhoto ? copy.uploadingPhoto : copy.choosePhoto}
           <input
             type="file"
@@ -338,7 +338,7 @@ function SettingsCard({
   return (
     <section className="tg-card rounded-[14px] border p-4 shadow-[0_1px_2px_rgba(16,30,60,0.05)]">
       <div className="flex items-start gap-3">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[#e7f1fb] text-[#2d7dd2]">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-[#e7f1fb] text-[var(--tg-link,#2365a9)]">
           <Icon className="size-[18px]" />
         </span>
         <div className="min-w-0">

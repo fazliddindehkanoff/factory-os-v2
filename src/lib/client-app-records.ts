@@ -15,6 +15,7 @@ export async function createAppRecord<T extends { id: string }>(
 export async function loadAppRecords<T extends { id: string }>(namespace: string): Promise<T[]> {
   const response = await fetch(`/api/app-records/${encodeURIComponent(namespace)}`, {
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   })
   const result = await response.json().catch(() => ({})) as { records?: T[] }
   if (!response.ok || !result.records) throw new Error("load-failed")

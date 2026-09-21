@@ -39,7 +39,7 @@ function parseOrder(value: unknown): OrderRecord | null {
     typeof order.id !== "string" ||
     typeof order.number !== "string" ||
     typeof order.currentStep !== "string" ||
-    typeof order.waitingForUserId !== "string" ||
+
     typeof order.warehouseId !== "string" ||
     !Array.isArray(order.lines) ||
     !Array.isArray(order.workflowHistory ?? [])
@@ -125,7 +125,7 @@ async function persistOrder(
   const updatedAt = new Date().toISOString()
   return db.transaction(async (tx) => {
     const result = await tx.update(appRecords)
-      .set({ payload: updated as unknown as Record<string, unknown>, updatedAt })
+      .set({ payload: { ...updated, revision: (Number(stored.payload.revision) || 0) + 1 } as unknown as Record<string, unknown>, updatedAt })
       .where(and(
         eq(appRecords.namespace, "orders"),
         eq(appRecords.id, id),
@@ -187,7 +187,12 @@ export async function POST(
   let metadata: Record<string, unknown> = { fromStep: order.currentStep }
   let quotationUpdates: { id: string; payload: Record<string, unknown> }[] = []
 
-  if (action === "warehouse-report") {
+  if (order.archivedAt) return NextResponse.json({ error: "order-not-found" }, { status: 404 })
+  if (action === "reject") {
+    if (order.currentStep === "complete" || order.waitingForUserId !== session.userId || !["department_supervisor", "warehouse", "chief_engineer", "director"].includes(order.currentStep) || !await userHasPermission(session.userId, "approvals.reject")) return NextResponse.json({ error: "forbidden" }, { status: 403 })
+    updated = { ...order, status: "rejected", currentStep: "complete", waitingForUserId: undefined, lastActorUserId: session.userId, workflowHistory: appendHistory(order, order.currentStep, "rejected", session.userId, now) }
+    auditAction = "order.rejected"
+  } else if (action === "warehouse-report") {
     const quantities = numberMap(body?.quantities)
     const responsibleUserId = await warehouseResponsible(order.warehouseId)
     if (
@@ -264,6 +269,8 @@ export async function POST(
         const children = rows.map((item) => item.payload as unknown as OrderRecord)
           .filter((item) => item.parentOrderId === id)
         const plan = planProcurementAssignment(order, children, specialistUserId, orderLineIds, session.userId, now)
+        plan.parent.revision = (order.revision ?? 0) + 1
+        plan.child.revision = (children.find((child) => child.id === plan.child.id)?.revision ?? 0) + 1
         await tx.update(appRecords).set({ payload: plan.parent as unknown as Record<string, unknown> })
           .where(and(eq(appRecords.namespace, "orders"), eq(appRecords.id, id)))
         const childPayload = plan.child as unknown as Record<string, unknown>
@@ -381,5 +388,5 @@ export async function POST(
   if (!updated || !await persistOrder(id, row, updated, session.userId, auditAction, metadata, quotationUpdates)) {
     return NextResponse.json({ error: "order-changed" }, { status: 409 })
   }
-  return NextResponse.json({ order: updated })
+  return NextResponse.json({ order: { ...updated, revision: (order.revision ?? 0) + 1 } })
 }

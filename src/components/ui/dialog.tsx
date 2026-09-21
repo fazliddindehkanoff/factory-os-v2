@@ -4,11 +4,30 @@ import * as React from "react"
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 
 import { cn } from "@/lib/utils"
+import { DialogLayer, useOverlayTheme } from "./overlay-layer"
 import { Button } from "@/components/ui/button"
-import { XIcon } from "lucide-react"
+import { useParams } from "next/navigation"
+import { ArrowLeftIcon, XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+// One native dismissal must never close more than one layer, even after unmount.
+const dismissedEvents = new WeakSet<Event>()
+function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
+  const parent = React.useContext(DialogLayer)
+  const id = React.useId()
+  const depth = parent.depth + 1
+  return <DialogLayer.Provider value={{ id, depth }}><DialogPrimitive.Root data-slot="dialog" {...props}
+    onOpenChange={(open, details) => {
+      if (!open) {
+        const layers = [...document.querySelectorAll<HTMLElement>('[data-dialog-layer][data-open]')]
+        const top = layers.sort((a, b) => Number(a.dataset.dialogDepth) - Number(b.dataset.dialogDepth)).at(-1)
+        if ((top && top.dataset.dialogLayer !== id) || dismissedEvents.has(details.event)) {
+          details.cancel()
+          return
+        }
+      }
+      onOpenChange?.(open, details)
+      if (!open && !details.isCanceled) dismissedEvents.add(details.event)
+    }} /></DialogLayer.Provider>
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -16,7 +35,8 @@ function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
 }
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  const theme = useOverlayTheme()
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...theme} {...props} />
 }
 
 function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
@@ -27,8 +47,10 @@ function DialogOverlay({
   className,
   ...props
 }: DialogPrimitive.Backdrop.Props) {
+  const { depth } = React.useContext(DialogLayer)
   return (
     <DialogPrimitive.Backdrop
+      style={{ zIndex: 50 + depth * 10 }}
       data-slot="dialog-overlay"
       className={cn(
         "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
@@ -47,17 +69,26 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
 }) {
+  const { id, depth } = React.useContext(DialogLayer)
+  const params = useParams()
+  const lang = params.lang
+  const back = lang === "ru" ? "Назад" : lang === "tr" ? "Geri" : "Ortga"
+  const close = lang === "ru" ? "Закрыть" : lang === "tr" ? "Kapat" : "Yopish"
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-dialog-layer={id}
+        data-dialog-depth={depth}
+        style={{ zIndex: 51 + depth * 10 }}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
       >
+        {depth > 0 && showCloseButton ? <DialogPrimitive.Close render={<Button type="button" variant="ghost" size="sm" className="w-fit" />}><ArrowLeftIcon />{back}</DialogPrimitive.Close> : null}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
@@ -72,7 +103,7 @@ function DialogContent({
           >
             <XIcon
             />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{close}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>

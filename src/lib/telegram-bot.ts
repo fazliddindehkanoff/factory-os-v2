@@ -1,5 +1,7 @@
 import "server-only"
 
+import { getUserLocale } from "@/lib/user-locale"
+import { formatWorkflowNotification } from "@/lib/orders"
 import { eq } from "drizzle-orm"
 
 import { db } from "@/db/client"
@@ -113,7 +115,9 @@ export async function sendTelegramNotificationForUser(
     .limit(1)
   if (!user?.telegramChatId) return false
 
-  const baseUrl = getTelegramWebAppUrl()
+  const locale = await getUserLocale(userId)
+  const configuredUrl = getTelegramWebAppUrl()
+  const baseUrl = configuredUrl ? localizeTelegramWebAppUrl(configuredUrl, locale) : null
   let webAppUrl = baseUrl
   if (baseUrl && orderId) {
     const url = new URL(baseUrl)
@@ -123,9 +127,9 @@ export async function sendTelegramNotificationForUser(
   }
   await sendTelegramMessage(
     user.telegramChatId,
-    `${orderNumber}\n${body}`,
+    `${orderNumber}\n${formatWorkflowNotification({ message: body }, locale)}`,
     webAppUrl
-      ? { inline_keyboard: [[{ text: "Buyurtmani ochish", web_app: { url: webAppUrl } }]] }
+      ? { inline_keyboard: [[{ text: locale === "ru" ? "Открыть заявку" : locale === "tr" ? "Talebi aç" : "Buyurtmani ochish", web_app: { url: webAppUrl } }]] }
       : undefined,
   )
   return true

@@ -23,11 +23,13 @@ import type { Locale, Messages } from "@/lib/i18n"
 import type { SupplierRecord, SupplierStatus } from "@/lib/procurement"
 
 export function SuppliersWorkspace({ lang, messages }: { lang: Locale; messages: Messages }) {
+  const [archiveError, setArchiveError] = React.useState("")
   const { can } = useAuthorization()
   const { suppliers, quotations, archiveSupplier } = useProcurement()
   const [query, setQuery] = React.useState("")
   const [status, setStatus] = React.useState<SupplierStatus | "">("")
   const [editing, setEditing] = React.useState<SupplierRecord | "new" | null>(null)
+  const [archivePending, setArchivePending] = React.useState(false)
   const [archiving, setArchiving] = React.useState<SupplierRecord | null>(null)
 
   if (!can("suppliers.view")) {
@@ -44,6 +46,7 @@ export function SuppliersWorkspace({ lang, messages }: { lang: Locale; messages:
     <div className="flex min-w-0 w-full flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
+          {archiveError ? <p role="alert" className="text-destructive">{archiveError}</p> : null}
           <h1 className="text-2xl font-semibold tracking-tight">{messages.suppliers}</h1>
           <p className="mt-1 text-sm text-muted-foreground">{messages.suppliersDescription}</p>
         </div>
@@ -112,11 +115,11 @@ export function SuppliersWorkspace({ lang, messages }: { lang: Locale; messages:
 
       <Dialog open={Boolean(archiving)} onOpenChange={(open) => !open && setArchiving(null)}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>{messages.archive}</DialogTitle><DialogDescription>{messages.archiveSupplierConfirmation}</DialogDescription></DialogHeader>
+          <DialogHeader>{archiveError ? <p role="alert" className="text-destructive">{archiveError}</p> : null}<DialogTitle>{messages.archive}</DialogTitle><DialogDescription>{messages.archiveSupplierConfirmation}</DialogDescription></DialogHeader>
           {archiving ? <p className="rounded-lg bg-muted p-3 font-medium">{archiving.name}</p> : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setArchiving(null)}>{messages.cancel}</Button>
-            <Button variant="destructive" onClick={() => { if (archiving) archiveSupplier(archiving.id); setArchiving(null) }}><ArchiveIcon />{messages.archive}</Button>
+            <Button variant="destructive" disabled={archivePending} onClick={async () => { if (!archiving) return; setArchivePending(true); setArchiveError(""); try { await archiveSupplier(archiving.id); setArchiving(null) } catch { setArchiveError(messages.recordUpdateFailed) } finally { setArchivePending(false) } }}><ArchiveIcon />{messages.archive}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -147,7 +150,10 @@ function SupplierDialog({ supplier, messages, open, onOpenChange }: {
     }
     const fields = { name: name.trim(), inn: inn.trim(), phone: phone.trim(), email: email.trim(), contactPerson: contactPerson.trim(), category: category.trim() }
     setSaving(true)
-    if (supplier) updateSupplier({ ...supplier, ...fields })
+    if (supplier) {
+      try { await updateSupplier({ ...supplier, ...fields }) }
+      catch { setError(messages.recordUpdateFailed); setSaving(false); return }
+    }
     else if (!await addSupplier(fields)) {
       setError(messages.recordUpdateFailed)
       setSaving(false)
@@ -182,5 +188,6 @@ function SupplierDialog({ supplier, messages, open, onOpenChange }: {
 }
 
 function SupplierField({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {
-  return <div className={`space-y-1.5 ${className ?? ""}`}><Label>{label}</Label>{children}</div>
+  const id = React.useId()
+  return <div className={`space-y-1.5 ${className ?? ""}`}><Label htmlFor={id}>{label}</Label>{React.isValidElement<{ id?: string }>(children) ? React.cloneElement(children, { id }) : children}</div>
 }

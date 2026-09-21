@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { safeReturnPath } from "@/lib/use-url-state"
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -36,7 +38,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
-import { saveOrderAttachments } from "@/lib/order-attachments"
+import { uxCopy } from "@/lib/ux-copy"
+import { saveOrderAttachments, orderDraftStore } from "@/lib/order-attachments"
 import { truncateLabel, type OrderAttachment, type OrderRecord } from "@/lib/orders"
 import { PRODUCT_TITLE_MAX_LENGTH } from "@/lib/product-input"
 import { getLocalizedTitle, type Product } from "@/lib/settings"
@@ -126,6 +129,8 @@ function OrderWizardForm({
   revisionOrder?: OrderRecord
 }) {
   const { data, mergeProduct } = useSettings()
+  const searchParams = useSearchParams()
+  const returnPath = safeReturnPath(searchParams.get("return"), lang)
   const { addOrder, resubmitOrder } = useOrders()
   const { can, currentUser } = useAuthorization()
   const assistantCreatesForSupervisors = currentUser?.roleIds.includes("role-requester") ?? false
@@ -236,6 +241,46 @@ function OrderWizardForm({
           existingAttachments: [],
         },
   )
+
+
+  const draftKey = `${currentUser?.id}:${revisionOrder?.id ?? "new"}:${revisionOrder?.revision ?? 0}`
+  const initialDraft = React.useRef(draft)
+  const [draftReady, setDraftReady] = React.useState(false)
+  const [draftSaved, setDraftSaved] = React.useState(false)
+  const [draftError, setDraftError] = React.useState(false)
+  const [validated, setValidated] = React.useState(false)
+  const formRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    let active = true
+    void orderDraftStore<{ draft: OrderDraft; step: number }>(draftKey, "read").then((saved) => {
+      if (!active) return
+      if (saved?.draft && Array.isArray(saved.draft.lines) && Array.isArray(saved.draft.files) && Array.isArray(saved.draft.departmentIds) && Array.isArray(saved.draft.branchIds)) {
+        setDraft(saved.draft)
+        setStep(Math.min(3, Math.max(1, Number(saved.step) || 1)))
+        setDraftSaved(true)
+      }
+    }).catch(() => { if (active) setDraftError(true) }).finally(() => { if (active) setDraftReady(true) })
+    return () => { active = false }
+  }, [draftKey])
+  React.useEffect(() => {
+    if (!draftReady || publishedOrderNumber) return
+    let active = true
+    // IndexedDB commits atomically, so navigation/reload retains fields and files.
+    void orderDraftStore(draftKey, "write", { draft, step }).then(() => {
+      if (active) { setDraftSaved(true); setDraftError(false) }
+    }).catch(() => { if (active) setDraftError(true) })
+    return () => { active = false }
+  }, [draft, step, draftKey, draftReady, publishedOrderNumber])
+  React.useEffect(() => {
+    if (!draftError || publishedOrderNumber) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault() }
+    window.addEventListener("beforeunload", warn)
+    return () => window.removeEventListener("beforeunload", warn)
+  }, [draftError, publishedOrderNumber])
+  React.useEffect(() => {
+    if (validated && error) formRef.current?.querySelector<HTMLElement>("[aria-invalid=true]")?.focus()
+  }, [validated, error])
+  const invalid = (condition: boolean) => validated && condition ? uxCopy[lang].invalid : undefined
 
   const availableApplicants = assistantCreatesForSupervisors
     ? data.users.filter((user) => user.roleIds.includes("role-dept_head"))
@@ -363,22 +408,25 @@ function OrderWizardForm({
 
   function goNext() {
     setError("")
+    setValidated(true)
     if (step === 1) {
       if (!draft.applicantId || !draft.departmentIds.length || !draft.branchIds.length || !draft.warehouseId) {
         setError(messages.requiredFields)
         return
       }
+      setValidated(false)
       setStep(2)
       return
     }
     if (step === 2) {
       const hasInvalidLine = draft.lines.some(
-        (line) => !line.productId || !line.unitTypeId || Number(line.quantity) <= 0,
+        (line) => !line.productId || !line.unitTypeId || !Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0,
       )
-      if (!draft.purposeId || !draft.expectedDate || hasInvalidLine) {
+      if (!draft.purposeId || (!draft.expectedDate || draft.expectedDate < today) || hasInvalidLine) {
         setError(hasInvalidLine ? messages.atLeastOnePosition : messages.requiredFields)
         return
       }
+      setValidated(false)
       setStep(3)
     }
   }
@@ -415,21 +463,24 @@ function OrderWizardForm({
     let order: OrderRecord | undefined
     try {
       order = revisionOrder
-        ? resubmitOrder(revisionOrder.id, payload)
+        ? await resubmitOrder(revisionOrder.id, payload)
         : await addOrder(payload)
     } catch {
-      setError(revisionCopy(lang).unableToResubmit)
+      setError(revisionOrder ? revisionCopy(lang).unableToResubmit : uxCopy[lang].publishFailed)
       setPublishing(false)
       return
     }
     if (!order) {
-      setError(revisionCopy(lang).unableToResubmit)
+      setError(revisionOrder ? revisionCopy(lang).unableToResubmit : uxCopy[lang].publishFailed)
       setPublishing(false)
       return
     }
     setPublishedOrderNumber(order.number)
+    void orderDraftStore(draftKey, "delete").catch(() => setDraftError(true))
     setPublishing(false)
   }
+
+  if (!draftReady) return <p role="status" className="p-6">{uxCopy[lang].loading}</p>
 
   if (publishedOrderNumber) {
     return (
@@ -446,7 +497,7 @@ function OrderWizardForm({
           </p>
           <Badge variant="outline" className="mt-4">{publishedOrderNumber}</Badge>
           <div className="mt-6">
-            <Link href={`/${lang}/orders`} className={buttonVariants()}>{messages.orderList}</Link>
+            <Link href={returnPath ?? `/${lang}/orders`} className={buttonVariants()}>{returnPath ? uxCopy[lang].back : messages.orderList}</Link>
           </div>
         </div>
       </div>
@@ -454,7 +505,7 @@ function OrderWizardForm({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
+    <div ref={formRef} className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
       <div className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-muted/40 p-5 shadow-sm md:p-7">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
@@ -475,6 +526,13 @@ function OrderWizardForm({
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <p role={draftError ? "alert" : "status"}>{draftError ? uxCopy[lang].draftError : draftSaved ? uxCopy[lang].saved : uxCopy[lang].loading}</p>
+        <Button variant="ghost" type="button" disabled={publishing} onClick={() => {
+          if (!window.confirm(uxCopy[lang].discardConfirm)) return
+          setDraft(initialDraft.current); setStep(1); setError(""); setValidated(false)
+        }}>{uxCopy[lang].discard}</Button>
+      </div>
       {legacyApplicantAdjusted ? (
         <p className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm" role="status">
           {revisionCopy(lang).supervisorAdjusted}
@@ -495,7 +553,7 @@ function OrderWizardForm({
               </div>
             </Field>
             {applicantIsCurrentUser ? (
-              <Field label={messages.applicant} hint={supervisorApplicantHint(lang)}>
+              <Field error={invalid(!draft.applicantId)} label={messages.applicant} hint={supervisorApplicantHint(lang)}>
                 <div
                   className="flex min-h-9 items-center rounded-lg border bg-muted/35 px-3 text-sm font-medium"
                   aria-label={messages.applicant}
@@ -505,7 +563,7 @@ function OrderWizardForm({
               </Field>
             ) : (
               <Field
-                label={messages.applicant}
+                error={invalid(!draft.applicantId)} label={messages.applicant}
                 hint={assistantCreatesForSupervisors ? supervisorOnlyHint(lang) : undefined}
               >
                 <SearchableSelect
@@ -535,7 +593,7 @@ function OrderWizardForm({
                 />
               </Field>
             )}
-            <Field label={messages.departmentsField} hint={availableDepartments.length === 1 ? messages.singleAutoSelected : undefined}>
+            <Field error={invalid(!draft.departmentIds.length)} label={messages.departmentsField} hint={availableDepartments.length === 1 ? messages.singleAutoSelected : undefined}>
               {isDepartmentSupervisor ? (
                 <SearchableSelect
                   options={availableDepartments.map((department) => ({ value: department.id, label: getLocalizedTitle(department, lang) }))}
@@ -563,7 +621,7 @@ function OrderWizardForm({
                 />
               )}
             </Field>
-            <Field label={messages.branchesField} hint={availableBranches.length === 1 ? messages.singleAutoSelected : undefined}>
+            <Field error={invalid(!draft.branchIds.length)} label={messages.branchesField} hint={availableBranches.length === 1 ? messages.singleAutoSelected : undefined}>
               {isDepartmentSupervisor ? (
                 <SearchableSelect
                   options={availableBranches.map((branch) => ({ value: branch.id, label: getLocalizedTitle(branch, lang) }))}
@@ -591,7 +649,7 @@ function OrderWizardForm({
                 />
               )}
             </Field>
-            <Field label={messages.warehouse} hint={availableWarehouses.length === 1 ? messages.singleAutoSelected : undefined}>
+            <Field error={invalid(!draft.warehouseId)} label={messages.warehouse} hint={availableWarehouses.length === 1 ? messages.singleAutoSelected : undefined}>
               <SearchableSelect
                 options={availableWarehouses.map((warehouse) => ({ value: warehouse.id, label: getLocalizedTitle(warehouse, lang) }))}
                 value={draft.warehouseId}
@@ -611,7 +669,7 @@ function OrderWizardForm({
         <section className="space-y-6 rounded-2xl border bg-card p-5 shadow-sm md:p-7">
           <SectionHeading number="2" title={messages.orderDetails} />
           <div className="grid gap-5 md:grid-cols-3">
-            <Field label={messages.purpose}>
+            <Field error={invalid(!draft.purposeId)} label={messages.purpose}>
               <SearchableSelect
                 options={data["order-purposes"].map((purpose) => ({ value: purpose.id, label: getLocalizedTitle(purpose, lang) }))}
                 value={draft.purposeId}
@@ -622,7 +680,7 @@ function OrderWizardForm({
                 ariaLabel={messages.purpose}
               />
             </Field>
-            <Field label={messages.expectedDate} htmlFor="order-expected-date">
+            <Field error={invalid(!draft.expectedDate || draft.expectedDate < today)} label={messages.expectedDate} htmlFor="order-expected-date">
               <Input
                 id="order-expected-date"
                 type="date"
@@ -644,8 +702,7 @@ function OrderWizardForm({
               {draft.lines.map((line, index) => {
                 return (
                   <div key={line.id} className="grid gap-3 rounded-xl border bg-muted/25 p-4 shadow-xs lg:grid-cols-[minmax(14rem,2fr)_minmax(7rem,.7fr)_minmax(8rem,.8fr)_minmax(12rem,1.4fr)_auto] lg:items-start">
-                    <Field label={`${index + 1}. ${messages.product}`}>
-                      <div className="space-y-2">
+                    <Field error={invalid(!line.productId)} label={`${index + 1}. ${messages.product}`}>
                         <SearchableSelect
                           options={data.products.map((item) => ({
                             value: item.id,
@@ -664,12 +721,11 @@ function OrderWizardForm({
                             onSelect: (query) => setProductDialog({ lineId: line.id, initialTitle: query }),
                           }}
                         />
-                      </div>
                     </Field>
-                    <Field label={messages.quantity} htmlFor={`quantity-${line.id}`}>
+                    <Field error={invalid(!Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0)} label={messages.quantity} htmlFor={`quantity-${line.id}`}>
                       <Input id={`quantity-${line.id}`} type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => updateLine(line.id, "quantity", event.target.value)} />
                     </Field>
-                    <Field label={messages.unit}>
+                    <Field error={invalid(!line.unitTypeId)} label={messages.unit}>
                       <SearchableSelect
                         options={[...data["unit-types"]]
                           .sort((a, b) => a.order - b.order)
@@ -712,7 +768,7 @@ function OrderWizardForm({
             <Field label={messages.comment} htmlFor="order-comment">
               <Textarea id="order-comment" rows={5} value={draft.comment} onChange={(event) => updateDraft("comment", event.target.value)} />
             </Field>
-            {can("requests.upload_attachment") ? <Field label={messages.attachments}>
+            {can("requests.upload_attachment") ? <Field label={messages.attachments} hint={uxCopy[lang].fileHint}>
               <div className="space-y-3">
                 <Label htmlFor="order-files" className={buttonVariants({ variant: "outline", className: "w-fit cursor-pointer" })}>
                   <PaperclipIcon />
@@ -966,12 +1022,17 @@ function SectionHeading({ number, title }: { number: string; title: string }) {
   )
 }
 
-function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: React.ReactNode }) {
+function Field({ label, hint, htmlFor, error, children }: { label: string; hint?: string; htmlFor?: string; error?: string; children: React.ReactNode }) {
+  const generatedId = React.useId()
+  const id = htmlFor ?? generatedId
+  const child = React.isValidElement<Record<string, unknown>>(children) ? children : null
+  const isControl = child && (typeof child.type !== "string" || ["input", "textarea", "select"].includes(child.type))
   return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    <div className="grid gap-1.5" role={isControl ? undefined : "group"} aria-labelledby={isControl ? undefined : `${id}-label`}>
+      <Label id={`${id}-label`} htmlFor={isControl ? id : undefined}>{label}</Label>
+      {isControl ? React.cloneElement(child, { id, "aria-invalid": Boolean(error), "aria-describedby": error ? `${id}-error` : hint ? `${id}-hint` : undefined }) : children}
+      {error ? <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p> : null}
+      {hint ? <p id={`${id}-hint`} className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   )
 }

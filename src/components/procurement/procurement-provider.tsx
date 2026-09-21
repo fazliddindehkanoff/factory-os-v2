@@ -26,42 +26,8 @@ import {
 } from "@/lib/procurement"
 import { hasPermission, type PermissionCode } from "@/lib/rbac"
 
-const initialSuppliers: SupplierRecord[] = [
-  {
-    id: "supplier-tashkent-metall",
-    name: "Toshkent Metall Savdo",
-    inn: "305 678 912",
-    phone: "+998 71 200 45 60",
-    email: "sales@tm-supply.uz",
-    contactPerson: "Sardor Aliyev",
-    category: "Metall va xomashyo",
-    status: "active",
-  },
-  {
-    id: "supplier-asia-cable",
-    name: "Asia Cable Group",
-    inn: "307 114 820",
-    phone: "+998 78 122 48 80",
-    email: "orders@asiacable.uz",
-    contactPerson: "Kamola Nurmatova",
-    category: "Elektr jihozlari",
-    status: "active",
-  },
-  {
-    id: "supplier-samtex-service",
-    name: "SamTex Service",
-    inn: "309 441 736",
-    phone: "+998 66 240 18 12",
-    email: "office@samtex.uz",
-    contactPerson: "Akmal Ismoilov",
-    category: "Servis va montaj",
-    status: "active",
-  },
-]
+const initialSuppliers: SupplierRecord[] = []
 
-const CASES_STORAGE_KEY = "factory-os-procurement-cases-v2"
-const QUOTATIONS_STORAGE_KEY = "factory-os-procurement-quotations-v2"
-const SUPPLIERS_STORAGE_KEY = "factory-os-procurement-suppliers-v2"
 
 type SupplierInput = Omit<SupplierRecord, "id" | "status">
 type QuotationInput = Pick<
@@ -72,20 +38,15 @@ type QuotationInput = Pick<
   supplierName: string
 }
 
-type LegacyQuotationRecord = QuotationRecord & {
-  ndsIncluded?: boolean
-  paymentTerms?: string
-  leadTimeDays?: number
-}
-
 type ProcurementContextValue = {
   cases: ProcurementCase[]
   quotations: QuotationRecord[]
   suppliers: SupplierRecord[]
   storageReady: boolean
+  syncError: boolean
   addSupplier: (supplier: SupplierInput) => Promise<boolean>
-  updateSupplier: (supplier: SupplierRecord) => void
-  archiveSupplier: (id: string) => void
+  updateSupplier: (supplier: SupplierRecord) => Promise<void>
+  archiveSupplier: (id: string) => Promise<void>
   findSupplierByPhone: (phone: string) => SupplierRecord | undefined
   assignSpecialist: (procurementCaseId: string, specialistUserId: string, orderLineIds: string[]) => Promise<boolean>
   addQuotation: (quotation: QuotationInput) => Promise<boolean>
@@ -113,6 +74,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     updateQuotations(value)
   }, [])
   const [suppliers, setSuppliers] = React.useState(initialSuppliers)
+  const [syncError, setSyncError] = React.useState(false)
   const [storageReady, setStorageReady] = React.useState(false)
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
@@ -122,30 +84,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   const canViewProcurementCases = can("procurement.view")
 
   React.useEffect(() => {
-    try {
-      const savedCases = window.localStorage.getItem(CASES_STORAGE_KEY)
-      const savedQuotations = window.localStorage.getItem(QUOTATIONS_STORAGE_KEY)
-      const savedSuppliers = window.localStorage.getItem(SUPPLIERS_STORAGE_KEY)
-      if (savedCases) setStoredCases(JSON.parse(savedCases) as ProcurementCase[])
-      if (savedQuotations) {
-        const parsed = JSON.parse(savedQuotations) as LegacyQuotationRecord[]
-        setQuotations(parsed.map(migrateQuotation))
-      }
-      if (savedSuppliers) setSuppliers(JSON.parse(savedSuppliers) as SupplierRecord[])
-    } finally {
-      setStorageReady(true)
-    }
-  }, [setQuotations])
-
-  React.useEffect(() => {
-    if (!storageReady) return
-    window.localStorage.setItem(CASES_STORAGE_KEY, JSON.stringify(storedCases))
-    window.localStorage.setItem(QUOTATIONS_STORAGE_KEY, JSON.stringify(quotations))
-    window.localStorage.setItem(SUPPLIERS_STORAGE_KEY, JSON.stringify(suppliers))
-  }, [quotations, storageReady, storedCases, suppliers])
-
-  React.useEffect(() => {
-    if (!currentUserId || !storageReady) return
+    if (!currentUserId) return
     let cancelled = false
     let loading = false
     async function refresh() {
@@ -154,26 +93,29 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       const revision = quotationRevision.current
       try {
       const [serverSuppliers, serverQuotations, serverCases] = await Promise.all([
-      canViewSuppliers ? loadAppRecords<SupplierRecord>("suppliers").catch(() => []) : Promise.resolve([]),
+      canViewSuppliers ? loadAppRecords<SupplierRecord>("suppliers") : Promise.resolve([]),
       canViewQuotations ? loadAppRecords<QuotationRecord>("quotations") : Promise.resolve([]),
-      canViewProcurementCases ? loadAppRecords<ProcurementCase>("procurement-cases").catch(() => []) : Promise.resolve([]),
+      canViewProcurementCases ? loadAppRecords<ProcurementCase>("procurement-cases") : Promise.resolve([]),
       ])
       if (cancelled) return
-      setSuppliers((current) => mergeRecords(current, serverSuppliers))
+      setSyncError(false)
+      setSuppliers(serverSuppliers)
       if (revision === quotationRevision.current) updateQuotations(serverQuotations)
       setStoredCases((current) => mergeRecords(current, serverCases))
-      } finally { loading = false }
+      } finally { loading = false; if (!cancelled) setStorageReady(true) }
     }
-    const refreshSafely = () => { void refresh().catch(() => undefined) }
+    const refreshSafely = () => { void refresh().catch(() => { if (!cancelled) setSyncError(true) }) }
     refreshSafely()
     const interval = window.setInterval(refreshSafely, 30_000)
     window.addEventListener("focus", refreshSafely)
+    window.addEventListener("factory-os:orders-changed", refreshSafely)
     return () => {
       cancelled = true
       window.clearInterval(interval)
       window.removeEventListener("focus", refreshSafely)
+      window.removeEventListener("factory-os:orders-changed", refreshSafely)
     }
-  }, [canViewProcurementCases, canViewQuotations, canViewSuppliers, currentUserId, storageReady])
+  }, [canViewProcurementCases, canViewQuotations, canViewSuppliers, currentUserId])
 
   const cases = React.useMemo(() => {
     if (!ordersReady || !storageReady) return storedCases
@@ -236,14 +178,16 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     }
   }
 
-  function updateSupplier(supplier: SupplierRecord) {
-    if (!can("suppliers.manage")) return
-    setSuppliers((current) => current.map((item) => item.id === supplier.id ? supplier : item))
+  async function updateSupplier(supplier: SupplierRecord) {
+    const response = await fetch(`/api/suppliers/${encodeURIComponent(supplier.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(supplier) })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error ?? "supplier-update-failed")
+    setSuppliers((current) => current.map((item) => item.id === supplier.id ? result.record : item))
   }
 
-  function archiveSupplier(id: string) {
-    if (!can("suppliers.manage")) return
-    setSuppliers((current) => current.map((item) => item.id === id ? { ...item, status: "archived" } : item))
+  async function archiveSupplier(id: string) {
+    const supplier = suppliers.find((item) => item.id === id)
+    if (supplier) await updateSupplier({ ...supplier, status: "archived" })
   }
 
   function findSupplierByPhone(phone: string) {
@@ -462,6 +406,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       quotations: visibleQuotations,
       suppliers: can("suppliers.view") ? suppliers : [],
       storageReady,
+      syncError,
       addSupplier,
       updateSupplier,
       archiveSupplier,
@@ -483,30 +428,6 @@ export function useProcurement() {
   return context
 }
 
-function migrateQuotation(legacy: LegacyQuotationRecord): QuotationRecord {
-  const legacyNdsIncluded = legacy.ndsIncluded
-  const legacyLeadTimeDays = legacy.leadTimeDays
-  const quotation = { ...legacy }
-  delete quotation.ndsIncluded
-  delete quotation.paymentTerms
-  delete quotation.leadTimeDays
-  const fallbackDate = legacyDeliveryDate(legacy.createdAt, legacyLeadTimeDays)
-  return {
-    ...quotation,
-    lines: legacy.lines.map((line) => ({
-      ...line,
-      expectedDeliveryDate: line.expectedDeliveryDate || fallbackDate,
-      ndsIncluded: line.ndsIncluded ?? legacyNdsIncluded ?? false,
-    })),
-  }
-}
-
-function legacyDeliveryDate(createdAt: string, leadTimeDays?: number) {
-  const date = new Date(createdAt)
-  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10)
-  date.setUTCDate(date.getUTCDate() + Math.max(0, leadTimeDays ?? 0))
-  return date.toISOString().slice(0, 10)
-}
 
 function mergeRecords<T extends { id: string }>(local: T[], server: T[]) {
   const merged = new Map(local.map((record) => [record.id, record]))

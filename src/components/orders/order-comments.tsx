@@ -30,10 +30,11 @@ export function OrderComments({
   lang,
   messages,
 }: {
-  order: OrderRecord
+  order: Pick<OrderRecord, "id" | "number" | "comments">
   lang: Locale
   messages: Messages
 }) {
+  const accessibilityId = React.useId()
   const { data } = useSettings()
   const { currentUser } = useAuthorization()
   const [serverComments, setServerComments] = React.useState<OrderComment[]>([])
@@ -159,14 +160,14 @@ export function OrderComments({
   }
 
   return (
-    <section aria-labelledby="order-comments-title" className="overflow-hidden rounded-2xl border bg-muted/20 shadow-xs">
+    <section aria-labelledby={`${accessibilityId}-title`} className="overflow-hidden rounded-2xl border bg-muted/20 shadow-xs">
       <div className="flex items-center justify-between gap-3 border-b bg-background/80 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
             <MessageCircleMoreIcon className="size-4" />
           </span>
           <div>
-            <h3 id="order-comments-title" className="text-sm font-semibold">{messages.comments}</h3>
+            <h3 id={`${accessibilityId}-title`} className="text-sm font-semibold">{messages.comments}</h3>
             <p className="text-xs text-muted-foreground">{messages.commentsDescription}</p>
           </div>
         </div>
@@ -220,7 +221,7 @@ export function OrderComments({
                     <button
                       type="button"
                       className={cn(
-                        "mb-2 block w-full rounded-lg border-l-2 px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "mb-2 block w-full rounded-lg border-l px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
                         isOwn ? "border-primary-foreground/70 bg-white/10" : "border-primary bg-muted/70",
                       )}
                       onClick={() => document.getElementById(`order-comment-${repliedComment.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
@@ -271,7 +272,7 @@ export function OrderComments({
         }}
       >
         {replyTo ? (
-          <div className="mb-2 flex items-center gap-2 rounded-lg border-l-2 border-primary bg-muted/60 px-3 py-2">
+          <div className="mb-2 flex items-center gap-2 rounded-lg border-l border-primary bg-muted/60 px-3 py-2">
             <ReplyIcon className="size-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-xs font-semibold text-primary">
@@ -320,7 +321,7 @@ export function OrderComments({
               rows={2}
               placeholder={`${messages.writeComment} · ${mentionCopy[lang].hint}`}
               aria-label={messages.writeComment}
-              aria-describedby="order-comment-limit"
+              aria-describedby={`${accessibilityId}-limit`}
               className="max-h-36 min-h-16 resize-y rounded-2xl bg-muted/30 px-3.5 py-2.5"
               onChange={(event) => { setBody(event.target.value); setMentionIndex(0) }}
               onKeyDown={(event) => {
@@ -357,7 +358,7 @@ export function OrderComments({
           </Button>
         </div>
         <div className="mt-1.5 flex items-center justify-between gap-3 px-1">
-          <p id="order-comment-limit" className="text-[11px] text-muted-foreground">{messages.commentInputHint}</p>
+          <p id={`${accessibilityId}-limit`} className="text-[11px] text-muted-foreground">{messages.commentInputHint}</p>
           <span className="text-[10px] tabular-nums text-muted-foreground">
             {body.length}/{ORDER_COMMENT_MAX_LENGTH}
           </span>

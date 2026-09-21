@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto"
-import { desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { after, NextResponse } from "next/server"
 
 import { db } from "@/db/client"
-import { notifications, users } from "@/db/schema"
+import { appRecords, notifications, users } from "@/db/schema"
 import { userHasPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import {
@@ -31,9 +31,12 @@ export async function GET() {
     .where(eq(notifications.userId, session.userId))
     .orderBy(desc(notifications.createdAt))
     .limit(100)
+  const metadata = rows.length ? await db.select().from(appRecords).where(and(eq(appRecords.namespace, "notification-events"), inArray(appRecords.id, rows.map((row) => row.id)))) : []
+  const events = new Map(metadata.map((row) => [row.id, row.payload]))
   return NextResponse.json({
     notifications: rows.map((row) => ({
       ...row,
+      event: events.get(row.id),
       orderId: row.orderId ?? "",
       userId: session.userId,
       commentId: row.commentId ?? undefined,
@@ -42,12 +45,13 @@ export async function GET() {
   })
 }
 
-export async function PATCH() {
+export async function PATCH(request: Request) {
   const session = await getSessionUser()
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 })
-  await db.update(notifications)
-    .set({ readAt: new Date().toISOString() })
-    .where(eq(notifications.userId, session.userId))
+  const body = await request.json().catch(() => null)
+  const ids = Array.isArray(body?.ids) ? body.ids.filter((id: unknown): id is string => typeof id === "string" && id.length <= 128).slice(0, 100) : []
+  if (body?.all !== true && !ids.length) return NextResponse.json({ error: "invalid-notification-selection" }, { status: 400 })
+  await db.update(notifications).set({ readAt: new Date().toISOString() }).where(and(eq(notifications.userId, session.userId), body?.all === true ? undefined : inArray(notifications.id, ids)))
   return NextResponse.json({ ok: true })
 }
 
@@ -130,6 +134,7 @@ export async function POST(request: Request) {
     resourceId: orderId,
   }).onConflictDoNothing()
 
+  if (inserted.rowsAffected > 0) await db.insert(appRecords).values({ id, namespace: "notification-events", createdByUserId: session.userId, payload: event }).onConflictDoNothing()
   if (inserted.rowsAffected > 0 && process.env.TELEGRAM_BOT_TOKEN) {
     after(async () => {
       try {

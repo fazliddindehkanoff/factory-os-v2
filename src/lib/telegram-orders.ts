@@ -1,3 +1,6 @@
+import { formatWorkflowNotification } from "@/lib/orders"
+import { canReadOrderWithSettings } from "@/lib/order-access"
+import { getSettingsData } from "@/lib/settings-data"
 import "server-only"
 
 import { and, desc, eq, inArray } from "drizzle-orm"
@@ -17,15 +20,12 @@ import {
   userRoles,
   users,
   warehouses,
-  workflowInstances,
-  workflowStepInstances,
 } from "@/db/schema"
 import type { Locale } from "@/lib/i18n"
 import {
   canViewParentOrderLink,
   getAssignedProcurementLineIds,
   getProcurementSuborderForSpecialist,
-  isOrderAssignedToProcurementSpecialist,
   isOrderWaitingForUser,
   isOperationalOrder,
   type OrderRecord,
@@ -51,7 +51,12 @@ export type TelegramOrderSummary = {
   id: string
   number: string
   type: "material" | "service"
-  status: "draft" | "in_review" | "revision_requested" | "approved" | "rejected" | "cancelled"
+  status: OrderStatus | "revision_requested" | "cancelled"
+  departmentOptions: Array<{ value: string; label: string }>
+  departmentIds: string[]
+  warehouseId: string
+  currentStep: OrderRecord["currentStep"]
+  waitingFor: string
   urgency: "normal" | "high" | "urgent" | "critical"
   applicant: string
   department: string
@@ -88,6 +93,11 @@ type VisibleOrderRow = {
   number: string
   type: OrderRecord["type"]
   status: TelegramOrderStatus
+  departmentOptions: Array<{ value: string; label: string }>
+  departmentIds: string[]
+  warehouseId: string
+  currentStep: OrderRecord["currentStep"]
+  waitingFor: string
   urgency: OrderRecord["urgency"]
   applicant: string
   department: string
@@ -100,12 +110,6 @@ type VisibleOrderRow = {
   waitingForMe: boolean
 }
 
-function toTelegramOrderStatus(status: OrderStatus): TelegramOrderStatus {
-  if (status === "draft") return "draft"
-  if (status === "approved" || status === "fulfilled") return "approved"
-  if (status === "rejected") return "rejected"
-  return "in_review"
-}
 
 function parseStoredOrder(payload: Record<string, unknown>): OrderRecord | null {
   const order = payload as Partial<OrderRecord>
@@ -175,19 +179,9 @@ async function getOrderAccess(userId: string) {
   }
 }
 
-async function getWaitingOrderIds(userId: string) {
-  const rows = await db.select({ orderId: workflowInstances.orderId })
-    .from(workflowStepInstances)
-    .innerJoin(workflowInstances, eq(workflowStepInstances.workflowInstanceId, workflowInstances.id))
-    .where(and(
-      eq(workflowStepInstances.assignedUserId, userId),
-      eq(workflowStepInstances.status, "active"),
-    ))
-  return new Set(rows.map((row) => row.orderId))
-}
-
 async function getVisibleOrderRows(userId: string, lang: Locale, includeContainers = false) {
   const access = await getOrderAccess(userId)
+  const settings = await getSettingsData()
   if (!access.canViewAll && !access.canViewOwn) return []
   const localized = localeField[lang]
   const storedRows = await db.select({
@@ -201,8 +195,7 @@ async function getVisibleOrderRows(userId: string, lang: Locale, includeContaine
     .map((row) => ({ order: parseStoredOrder(row.payload), ownerId: row.createdByUserId }))
     .filter((row): row is { order: OrderRecord; ownerId: string | null } => Boolean(row.order))
     .filter(({ order }) => includeContainers || isOperationalOrder(order))
-    .filter(({ order, ownerId }) => access.canViewAll || order.applicantId === userId || order.createdByUserId === userId || ownerId === userId)
-    .filter(({ order }) => !access.procurementSpecialist || isOrderAssignedToProcurementSpecialist(order, userId))
+    .filter(({ order }) => canReadOrderWithSettings(order, userId, settings))
 
   const [userRows, departmentRows, warehouseRows, purposeRows] = await Promise.all([
     db.select({ id: users.id, title: users.fullName }).from(users),
@@ -229,7 +222,12 @@ async function getVisibleOrderRows(userId: string, lang: Locale, includeContaine
     parentOrderNumber: order.parentOrderNumber,
     number: procurementSuborder?.number ?? order.number,
     type: order.type,
-    status: order.financeCancellation ? "cancelled" : toTelegramOrderStatus(order.status),
+    status: order.financeCancellation ? "cancelled" : order.currentStep === "sourcing" && order.procurementReviewComment ? "revision_requested" : order.status,
+    departmentOptions: order.departmentIds.map((id) => ({ value: id, label: departmentNames.get(id) ?? id })),
+    departmentIds: order.departmentIds,
+    warehouseId: order.warehouseId,
+    currentStep: order.currentStep,
+    waitingFor: [...new Set([order.waitingForUserId, ...Object.values(order.procurementProgress ?? {}).map((item) => item.waitingForUserId)].filter(Boolean))].map((id) => userNames.get(id!) ?? "—").join(", "),
     urgency: order.urgency,
     applicant: userNames.get(order.applicantId) ?? order.applicantId,
     department: order.departmentIds.map((id) => departmentNames.get(id)).filter(Boolean).join(", ") || "—",
@@ -239,22 +237,20 @@ async function getVisibleOrderRows(userId: string, lang: Locale, includeContaine
     createdAt: order.createdAt,
     comment: order.comment,
     lines: visibleLines,
-    waitingForMe: isOrderWaitingForUser(order, userId),
+    waitingForMe: isOrderWaitingForUser(order, userId, settings.warehouses.find((item) => item.id === order.warehouseId)?.responsibleUserId),
   } satisfies VisibleOrderRow
   })
 }
 
 export async function getTelegramOrders(userId: string, lang: Locale, waitingOnly = false) {
-  const [rows, waitingIds] = await Promise.all([
-    getVisibleOrderRows(userId, lang),
-    getWaitingOrderIds(userId),
-  ])
+  const rows = await getVisibleOrderRows(userId, lang)
   return rows
     .map((row) => ({
       id: row.id,
       number: row.number,
       type: row.type,
       status: row.status,
+      departmentOptions: row.departmentOptions, departmentIds: row.departmentIds, warehouseId: row.warehouseId, currentStep: row.currentStep, waitingFor: row.waitingFor,
       urgency: row.urgency,
       applicant: row.applicant,
       department: row.department,
@@ -263,7 +259,7 @@ export async function getTelegramOrders(userId: string, lang: Locale, waitingOnl
       expectedDate: row.expectedDate,
       createdAt: row.createdAt,
       itemCount: row.lines.length,
-      waitingForMe: row.waitingForMe || waitingIds.has(row.id),
+      waitingForMe: row.waitingForMe,
     } satisfies TelegramOrderSummary))
     .filter((order) => !waitingOnly || order.waitingForMe)
 }
@@ -276,14 +272,13 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
   const localized = localeField[lang]
   const productIds = [...new Set(order.lines.map((line) => line.productId))]
   const unitTypeIds = [...new Set(order.lines.map((line) => line.unitTypeId).filter(Boolean) as string[])]
-  const [productRows, unitRows, waitingIds, comments] = await Promise.all([
+  const [productRows, unitRows, comments] = await Promise.all([
     productIds.length
       ? db.select({ id: products.id, title: localized.product }).from(products).where(inArray(products.id, productIds))
       : Promise.resolve([]),
     unitTypeIds.length
       ? db.select({ id: unitTypes.id, title: localized.unit }).from(unitTypes).where(inArray(unitTypes.id, unitTypeIds))
       : Promise.resolve([]),
-    getWaitingOrderIds(userId),
     db.select({
       id: orderComments.id,
       authorName: orderComments.authorName,
@@ -312,6 +307,7 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
     childOrders: rows.filter((child) => child.parentOrderId === order.id).map((child) => ({ id: child.id, number: child.number })),
     type: order.type,
     status: order.status,
+    departmentOptions: order.departmentOptions, departmentIds: order.departmentIds, warehouseId: order.warehouseId, currentStep: order.currentStep, waitingFor: order.waitingFor,
     urgency: order.urgency,
     applicant: order.applicant,
     department: order.department,
@@ -320,7 +316,7 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
     expectedDate: order.expectedDate,
     createdAt: order.createdAt,
     itemCount: lines.length,
-    waitingForMe: order.waitingForMe || waitingIds.has(order.id),
+    waitingForMe: order.waitingForMe,
     comment: order.comment,
     lines: lines.map((line) => ({ ...line, unit: line.unit ?? "" })),
     comments: comments.map((comment) => ({
@@ -330,8 +326,8 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
   } satisfies TelegramOrderDetail
 }
 
-export async function getTelegramNotifications(userId: string) {
-  return db.select({
+export async function getTelegramNotifications(userId: string, lang: Locale = "uz") {
+  const rows = await db.select({
     id: notifications.id,
     title: notifications.title,
     body: notifications.body,
@@ -344,6 +340,7 @@ export async function getTelegramNotifications(userId: string) {
     .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt))
     .limit(100)
+  return rows.map((row) => ({ ...row, body: formatWorkflowNotification({ message: row.body }, lang) }))
 }
 
 export async function getMentionedOrderDiscussion(userId: string, orderId: string) {

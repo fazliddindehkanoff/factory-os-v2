@@ -1,8 +1,11 @@
 "use client";
 
-import * as React from "react";
+import { stepLabel } from "@/lib/order-labels"
+import * as React from "react"
+import { useUrlState, safeReturnPath } from "@/lib/use-url-state"
+import { uxCopy } from "@/lib/ux-copy";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   ChartNoAxesColumnIncreasingIcon,
   CheckIcon,
@@ -52,7 +55,6 @@ import {
 import type { Locale, Messages } from "@/lib/i18n";
 import { downloadOrderAttachment } from "@/lib/order-attachments";
 import {
-  canUserViewRejectedOrder,
   getOrderActionView,
   getProcurementLinesAtStep,
   getAssignedProcurementLineIds,
@@ -105,21 +107,21 @@ export function OrdersList({
   const searchParams = useSearchParams();
   const waitingOnly = searchParams.get("view") === "waiting";
   const copy = workflowCopy(lang);
-  const [query, setQuery] = React.useState("");
-  const [filters, setFilters] = React.useState(initialFilters);
-  const [page, setPage] = React.useState(1);
-  const [pageSize, setPageSize] = React.useState(10);
+  const [query, setQuery] = useUrlState("q", "");
+  const [filters, setFilters] = useUrlState("filters", initialFilters);
+  const [page, setPage] = useUrlState("page", 1);
+  const [pageSize, setPageSize] = useUrlState("size", 10);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = React.useState(false);
-  const requestedOrderId = searchParams.get("order");
-  const [detailSelection, setDetailSelection] = React.useState<{ url: string | null; id: string | null; section?: "procurement" }>({ url: requestedOrderId, id: requestedOrderId });
-  const detailOrderId = detailSelection.url === requestedOrderId ? detailSelection.id : requestedOrderId;
-  const setDetailOrderId = (id: string | null, section?: "procurement") => setDetailSelection({ url: requestedOrderId, id, section });
+  const [deletePending, setDeletePending] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState("");
+  const [detailOrderId, setUrlOrderId] = useUrlState<string | null>("order", null);
+  const [detailSection, setDetailSection] = React.useState<"procurement" | undefined>();
+  const setDetailOrderId = (id: string | null, section?: "procurement") => { setUrlOrderId(id); setDetailSection(section); };
+  const returnPath = safeReturnPath(searchParams.get("return"), lang);
   const canCreate = can("requests.create");
   const canDelete = can("requests.edit");
-  const ownOnly = !can("requests.view") && can("requests.view_own");
-  const departmentScoped = currentUser?.roleIds.includes("role-dept_head") ?? false;
-  const procurementSpecialistScoped = currentUser?.roleIds.includes("role-procurement_manager") ?? false;
+  const procurementSpecialistScoped = Boolean(currentUser?.roleIds.includes("role-procurement_manager") && !currentUser?.roleIds.includes("role-procurement_head"));
   const normalizedQuery = query.trim().toLocaleLowerCase();
 
   function waitingForCurrentUser(order: OrderRecord) {
@@ -131,18 +133,6 @@ export function OrdersList({
       currentUser?.id,
       warehouseResponsibleUserId,
     );
-  }
-
-  function visibleAfterRejection(order: OrderRecord) {
-    const applicant = data.users.find((user) => user.id === order.applicantId);
-    const supervisorUserId = applicant?.roleIds.includes("role-dept_head")
-      ? applicant.id
-      : data.users.find(
-          (user) =>
-            user.roleIds.includes("role-dept_head") &&
-            user.departmentIds.some((id) => order.departmentIds.includes(id)),
-        )?.id;
-    return canUserViewRejectedOrder(order, currentUser?.id, supervisorUserId);
   }
 
   const filteredOrders = orders.filter((order) => {
@@ -165,10 +155,6 @@ export function OrdersList({
 
     return (
       (!waitingOnly || waitingForCurrentUser(order)) &&
-      (!ownOnly || order.createdByUserId === currentUser?.id) &&
-      (!departmentScoped || order.departmentIds.some((id) => currentUser?.departmentIds.includes(id))) &&
-      (!procurementSpecialistScoped || isOrderAssignedToProcurementSpecialist(order, currentUser?.id)) &&
-      visibleAfterRejection(order) &&
       (!normalizedQuery || searchText.includes(normalizedQuery)) &&
       (!filters.type || order.type === filters.type) &&
       (!filters.status || order.status === filters.status) &&
@@ -281,6 +267,7 @@ export function OrdersList({
 
   return (
     <div className="flex min-w-0 w-full flex-1 flex-col gap-4 px-4 pb-8 md:px-6">
+      {returnPath ? <Link href={returnPath} className="text-sm underline">{uxCopy[lang].back}</Link> : null}
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -361,6 +348,7 @@ export function OrdersList({
             setQuery(event.target.value);
             setPage(1);
           }}
+          aria-label={messages.searchOrders}
           placeholder={messages.searchOrders}
           className="pl-8"
         />
@@ -567,7 +555,7 @@ export function OrdersList({
         <OrderDetailsDialog
           key={detailOrder.id}
           order={detailOrder}
-          initialSection={detailSelection.id === detailOrder.id && detailSelection.url === requestedOrderId ? detailSelection.section : undefined}
+          initialSection={detailSection}
           lang={lang}
           messages={messages}
           data={data}
@@ -593,7 +581,7 @@ export function OrdersList({
           }}
           onApprove={async (id, paymentForm) => {
             const approved = await approveOrder(id, paymentForm);
-            if (approved) setDetailOrderId(null);
+            if (approved && !paymentForm) setDetailOrderId(null);
             return approved;
           }}
           onReject={async (id) => {
@@ -613,6 +601,7 @@ export function OrdersList({
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{messages.deleteOrders}</DialogTitle>
+            {deleteError ? <p role="alert" className="text-destructive">{deleteError}</p> : null}
             <DialogDescription>
               {messages.deleteOrdersConfirmation}
             </DialogDescription>
@@ -623,10 +612,12 @@ export function OrdersList({
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
-                deleteOrders([...validSelectedIds]);
-                setSelectedIds(new Set());
-                setConfirmDelete(false);
+              disabled={deletePending}
+              onClick={async () => {
+                setDeletePending(true); setDeleteError("");
+                try { await deleteOrders([...validSelectedIds]); setSelectedIds(new Set()); setConfirmDelete(false); }
+                catch { setDeleteError(messages.recordUpdateFailed); }
+                finally { setDeletePending(false); }
               }}
             >
               <Trash2Icon />
@@ -734,7 +725,7 @@ function OrderRow({
       <TableCell>
         <StatusBadge status={order.status} messages={messages} lang={lang} />
       </TableCell>
-      <TableCell>{formatDate(order.createdAt.slice(0, 10))}</TableCell>
+      <TableCell>{new Intl.DateTimeFormat(lang, { timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(order.createdAt))}</TableCell>
       <TableCell onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
         {canPlace ? <Button size="sm" onClick={onPlace}>{orderPaymentCopy[lang].shortTitle}</Button> : null}
       </TableCell>
@@ -742,9 +733,10 @@ function OrderRow({
   );
 }
 
-function OrderDetailsDialog({
+export function OrderDetailsDialog({
   order,
   initialSection,
+  showComments = true,
   lang,
   messages,
   data,
@@ -761,6 +753,7 @@ function OrderDetailsDialog({
 }: {
   order: OrderRecord;
   initialSection?: "procurement";
+  showComments?: boolean;
   lang: Locale;
   messages: Messages;
   data: ReturnType<typeof useSettings>["data"];
@@ -775,6 +768,9 @@ function OrderDetailsDialog({
   onReject: (id: string) => Promise<boolean>;
   onWarehouseReport: (id: string, quantities: Record<string, number>) => Promise<boolean>;
 }) {
+  const pathname = usePathname();
+  const contextParams = useSearchParams();
+  const revisionReturn = `${pathname}?${contextParams.toString()}`;
   const { currentUser } = useAuthorization();
   const { quotations } = useProcurement();
   const copy = workflowCopy(lang);
@@ -943,7 +939,7 @@ function OrderDetailsDialog({
             />
             <DetailField
               label={messages.createdAt}
-              value={formatDate(order.createdAt.slice(0, 10))}
+              value={new Intl.DateTimeFormat(lang, { timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(order.createdAt))}
             />
             <DetailField
               label={copy.workflowStep}
@@ -1103,7 +1099,7 @@ function OrderDetailsDialog({
         </section>
 
         <OrderPaymentSummary order={order} lang={lang} />
-        <OrderComments order={order} lang={lang} messages={messages} />
+        {showComments ? <OrderComments order={order} lang={lang} messages={messages} /> : null}
 
         {order.lines.some((line) => line.fulfillmentStatus === "needs_procurement") &&
         [
@@ -1134,7 +1130,7 @@ function OrderDetailsDialog({
           </Button>
           {canRevise ? (
             <Link
-              href={`/${lang}/orders/new?revise=${encodeURIComponent(order.id)}`}
+              href={`/${lang}/orders/new?revise=${encodeURIComponent(order.id)}&return=${encodeURIComponent(revisionReturn)}`}
               className={buttonVariants()}
             >
               {copy.editAndResend}
@@ -1430,6 +1426,7 @@ function formatDateTime(value: string, lang: Locale) {
     hour: "2-digit",
     minute: "2-digit",
     hourCycle: "h23",
+    timeZone: "Asia/Tashkent",
   }).formatToParts(date);
   const valueOf = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((part) => part.type === type)?.value ?? "";
@@ -1486,53 +1483,6 @@ function UrgencyBadge({
   return <Badge variant={variants[urgency]}>{labels[urgency]}</Badge>;
 }
 
-function stepLabel(step: OrderRecord["currentStep"], lang: Locale) {
-  const labels = {
-    uz: {
-      department_supervisor: "Bo‘lim rahbari",
-      warehouse: "Ombor nazorati",
-      chief_engineer: "Bosh muhandis",
-      procurement_accept: "Ta’minot rahbari — qabul qilish",
-      sourcing: "Ta’minotchi — qidiruv",
-      price_check: "Ta’minot rahbari — narx tekshiruvi",
-      director: "Direktor",
-      procurement_order: "Ta’minotchi — buyurtmani rasmiylashtirish",
-      procurement_supervisor: "Ta’minot rahbari — buyurtmani tasdiqlash",
-      warehouse_receipt: "Ombor — qabul qilish",
-      warehouse_supervisor: "Ombor rahbari — qabulni tasdiqlash",
-      complete: "Yakunlangan",
-    },
-    ru: {
-      department_supervisor: "Руководитель отдела",
-      warehouse: "Контроль склада",
-      chief_engineer: "Главный инженер",
-      procurement_accept: "Руководитель снабжения — приём заявки",
-      sourcing: "Снабженец — поиск",
-      price_check: "Руководитель снабжения — проверка цены",
-      director: "Директор",
-      procurement_order: "Снабженец — оформление заказа",
-      procurement_supervisor: "Руководитель снабжения — подтверждение заказа",
-      warehouse_receipt: "Склад — приёмка",
-      warehouse_supervisor: "Руководитель склада — подтверждение приёмки",
-      complete: "Завершено",
-    },
-    tr: {
-      department_supervisor: "Bölüm yöneticisi",
-      warehouse: "Depo kontrolü",
-      chief_engineer: "Baş mühendis",
-      procurement_accept: "Satın alma yöneticisi — talep kabulü",
-      sourcing: "Satın almacı — tedarik araması",
-      price_check: "Satın alma yöneticisi — fiyat kontrolü",
-      director: "Direktör",
-      procurement_order: "Satın alma uzmanı — sipariş oluşturma",
-      procurement_supervisor: "Satın alma yöneticisi — sipariş onayı",
-      warehouse_receipt: "Depo — mal kabul",
-      warehouse_supervisor: "Depo yöneticisi — kabul onayı",
-      complete: "Tamamlandı",
-    },
-  } as const;
-  return labels[lang][step];
-}
 
 function fulfillmentLabel(
   status: OrderRecord["lines"][number]["fulfillmentStatus"],

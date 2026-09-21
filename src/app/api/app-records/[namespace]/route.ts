@@ -1,8 +1,10 @@
+import { canReadOrderWithSettings } from "@/lib/order-access"
+import { getSettingsData } from "@/lib/settings-data"
 import { and, desc, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 import { db } from "@/db/client"
-import { appRecords, roles, userRoles } from "@/db/schema"
+import { appRecords } from "@/db/schema"
 import { userHasAnyPermission } from "@/lib/auth/authorization"
 import { getSessionUser } from "@/lib/auth/session"
 import {
@@ -14,7 +16,6 @@ import {
   getAssignedProcurementLineIds,
   getProcurementLinesAtStep,
   getProcurementSuborderForSpecialist,
-  isOrderAssignedToProcurementSpecialist,
   type OrderRecord,
 } from "@/lib/orders"
 import { getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed } from "@/lib/procurement"
@@ -43,12 +44,6 @@ export async function GET(
   if ("error" in auth) return auth.error
 
   const conditions = [eq(appRecords.namespace, auth.namespace)]
-  if (
-    auth.namespace === "orders" &&
-    !await userHasAnyPermission(auth.session.userId, ["requests.view"])
-  ) {
-    conditions.push(eq(appRecords.createdByUserId, auth.session.userId))
-  }
   const rows = await db.select({ id: appRecords.id, payload: appRecords.payload })
     .from(appRecords)
     .where(and(...conditions))
@@ -56,17 +51,8 @@ export async function GET(
 
   let records: Record<string, unknown>[] = rows.map((row) => ({ ...row.payload, id: row.id }))
   if (auth.namespace === "orders") {
-    const assignedRoles = await db.select({ code: roles.code })
-      .from(userRoles)
-      .innerJoin(roles, eq(userRoles.roleId, roles.id))
-      .where(eq(userRoles.userId, auth.session.userId))
-    const roleCodes = new Set(assignedRoles.map((role) => role.code))
-    if (roleCodes.has("procurement_manager") && !roleCodes.has("procurement_head")) {
-      records = records.filter((record) => (
-        Array.isArray(record.lines) &&
-        isOrderAssignedToProcurementSpecialist(record as unknown as OrderRecord, auth.session.userId)
-      ))
-    }
+    const settings = await getSettingsData()
+    records = records.filter((record) => canReadOrderWithSettings(record as unknown as OrderRecord, auth.session.userId, settings))
   }
 
   return NextResponse.json({ records })
@@ -118,7 +104,7 @@ export async function POST(
     const sourcingLines = order ? getProcurementLinesAtStep(order, "sourcing", auth.session.userId) : []
     const sourcingIds = new Set(sourcingLines.map((line) => line.id))
     if (
-      !order ||
+      !order || order.archivedAt ||
       order.procurementSplit ||
       !quotationLines.length ||
       new Set(submittedLineIds).size !== submittedLineIds.length ||

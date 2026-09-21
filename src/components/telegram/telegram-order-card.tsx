@@ -8,23 +8,26 @@ import type { TelegramOrderSummary } from "@/lib/telegram-orders"
 const localeTag = { uz: "uz-UZ", ru: "ru-RU", tr: "tr-TR" } as const
 
 export const telegramStatusVisual = {
-  draft: { color: "#7b8798", background: "#edf1f6", progress: 8 },
-  in_review: { color: "#d9820b", background: "#fcf0dd", progress: 56 },
-  revision_requested: { color: "#d9820b", background: "#fcf0dd", progress: 28 },
-  approved: { color: "#1fa363", background: "#e5f6ec", progress: 100 },
-  rejected: { color: "#e04434", background: "#fbe8e5", progress: 100 },
-  cancelled: { color: "#7b8798", background: "#edf1f6", progress: 100 },
-} satisfies Record<TelegramOrderSummary["status"], { color: string; background: string; progress: number }>
+  draft: { color: "#526176", background: "#edf1f6" },
+  supervisor_review: { color: "#925705", background: "#fcf0dd" },
+  warehouse_check: { color: "#925705", background: "#fcf0dd" },
+  in_progress: { color: "#2165a6", background: "#e7f1fb" },
+  fulfilled: { color: "#137547", background: "#e5f6ec" },
+  revision_requested: { color: "#925705", background: "#fcf0dd" },
+  approved: { color: "#137547", background: "#e5f6ec" },
+  rejected: { color: "#ae2d23", background: "#fbe8e5" },
+  cancelled: { color: "#526176", background: "#edf1f6" },
+} satisfies Record<TelegramOrderSummary["status"], { color: string; background: string }>
 
 export function TelegramStatusPill({ order, copy }: { order: Pick<TelegramOrderSummary, "status">; copy: TelegramCopy }) {
   const visual = telegramStatusVisual[order.status]
   return (
     <span
-      className="inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold"
+      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold"
       style={{ color: visual.color, background: visual.background }}
     >
       <span className="size-1.5 shrink-0 rounded-full" style={{ background: visual.color }} />
-      <span className="truncate">{copy.status[order.status]}</span>
+      <span>{copy.status[order.status]}</span>
     </span>
   )
 }
@@ -41,7 +44,7 @@ export function TelegramOrderCard({ order, lang, copy, returnQuery = "" }: { ord
       href={`/${lang}/telegram/orders/${encodeURIComponent(order.id)}${returnQuery ? `?return=${encodeURIComponent(returnQuery)}` : ""}`}
       className="tg-card group block min-h-44 touch-manipulation rounded-[14px] border p-[15px] text-left shadow-[0_1px_2px_rgba(16,30,60,0.06)] transition-[background-color,border-color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2d7dd2] active:opacity-80"
     >
-      <div className="flex items-start justify-between gap-2.5">
+      <div className="flex flex-wrap items-start justify-between gap-2.5">
         <div className="flex min-w-0 items-center gap-2">
           <span className="size-2 shrink-0 rounded-full" style={{ background: visual.color }} />
           <span className="truncate font-mono text-[12px] font-semibold text-[var(--tg-text)]">{order.number}</span>
@@ -75,12 +78,10 @@ export function TelegramOrderCard({ order, lang, copy, returnQuery = "" }: { ord
       </dl>
 
       <div className="mt-3 flex items-center justify-between text-[10px] font-semibold">
-        <span style={{ color: visual.color }}>{copy.status[order.status]}</span>
+        <span className="text-[var(--tg-text-secondary)]">{copy.status[order.status]}</span>
         <span className="font-mono text-[var(--tg-text-muted)]">{order.itemCount} {copy.items}</span>
       </div>
-      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[#e7ecf3]" aria-hidden="true">
-        <span className="block h-full rounded-full" style={{ width: `${visual.progress}%`, background: visual.color }} />
-      </div>
+
     </Link>
   )
 }

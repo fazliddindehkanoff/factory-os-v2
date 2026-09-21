@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { canReadOrderWithSettings } from "@/lib/order-access"
 
 import { useSettings } from "@/components/settings/settings-provider"
 import {
@@ -13,14 +14,12 @@ import {
   canCreateRequestForApplicant,
   getOrderActionView,
   getProcurementLinesAtStep,
-  canUserViewRejectedOrder,
   getProcurementSpecialistIds,
   isOrderAssignedToProcurementSpecialist,
   normalizeOrderCommentBody,
   resolveOrderApplicantId,
   shouldSkipSupervisorApproval,
   type OrderRecord,
-  type WorkflowHistoryEntry,
   type WorkflowNotification,
   type WorkflowNotificationEvent,
   type WorkflowStep,
@@ -28,21 +27,14 @@ import {
 import { hasPermission, type PermissionCode } from "@/lib/rbac"
 
 const initialOrders: OrderRecord[] = []
-const retiredDemoOrderIds = new Set([
-  "order-2026-0010",
-  "order-2026-0011",
-  "order-2026-0012",
-])
-
-const ORDERS_STORAGE_KEY = "factory-os-demo-orders"
-const NOTIFICATIONS_STORAGE_KEY = "factory-os-demo-notifications"
-
 type OrdersContextValue = {
   orders: OrderRecord[]
   notifications: WorkflowNotification[]
   storageReady: boolean
+  syncError: boolean
+  lastUpdated: string | null
   addOrder: (order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => Promise<OrderRecord>
-  resubmitOrder: (orderId: string, order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => OrderRecord | undefined
+  resubmitOrder: (orderId: string, order: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) => Promise<OrderRecord | undefined>
   approveOrder: (orderId: string, paymentForm?: FormData) => Promise<boolean>
   rejectOrder: (orderId: string) => Promise<boolean>
   submitWarehouseReport: (orderId: string, quantities: Record<string, number>) => Promise<boolean>
@@ -54,15 +46,14 @@ type OrdersContextValue = {
   submitProcurementOffers: (orderId: string) => Promise<OrderRecord | undefined>
   reviewProcurementOffers: (orderId: string, approved: boolean, comment?: string, quotationIds?: string[]) => Promise<boolean>
   addOrderComment: (orderId: string, body: string, replyToId?: string) => boolean
-  markNotificationsRead: () => void
-  deleteOrders: (ids: string[]) => void
+  markNotificationsRead: (ids?: string[]) => Promise<boolean>
+  deleteOrders: (ids: string[]) => Promise<void>
 }
 
 const OrdersContext = React.createContext<OrdersContextValue | null>(null)
 
 export function OrdersProvider({ children }: { children: React.ReactNode }) {
   const { currentUserId, data } = useSettings()
-  const initialSettingsData = React.useRef(data)
   const [orders, updateOrders] = React.useState(initialOrders)
   const orderRevision = React.useRef(0)
   const setOrders = React.useCallback((value: React.SetStateAction<OrderRecord[]>) => {
@@ -70,113 +61,22 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     updateOrders(value)
   }, [])
   const [notifications, setNotifications] = React.useState<WorkflowNotification[]>([])
+  const [syncError, setSyncError] = React.useState(false)
+  const [lastUpdated, setLastUpdated] = React.useState<string | null>(null)
   const [storageReady, setStorageReady] = React.useState(false)
   const currentUser = data.users.find((user) => user.id === currentUserId)
   const currentRoles = data.roles.filter((role) => currentUser?.roleIds.includes(role.id))
   const can = (permission: PermissionCode) => hasPermission(currentRoles, permission)
 
   function canViewOrder(order: OrderRecord) {
-    if (!currentUser || (!can("requests.view") && !can("requests.view_own"))) return false
-    if (!can("requests.view") && order.createdByUserId !== currentUser.id) return false
-    if (
-      currentUser.roleIds.includes("role-dept_head") &&
-      !order.departmentIds.some((id) => currentUser.departmentIds.includes(id))
-    ) return false
-    if (
-      currentUser.roleIds.includes("role-procurement_manager") &&
-      !isOrderAssignedToProcurementSpecialist(order, currentUser.id)
-    ) return false
-    const applicant = data.users.find((user) => user.id === order.applicantId)
-    const supervisorUserId = applicant?.roleIds.includes("role-dept_head")
-      ? applicant.id
-      : data.users.find(
-          (user) =>
-            user.roleIds.includes("role-dept_head") &&
-            user.departmentIds.some((id) => order.departmentIds.includes(id)),
-        )?.id
-    return canUserViewRejectedOrder(order, currentUser.id, supervisorUserId)
+    return canReadOrderWithSettings(order, currentUserId, data)
   }
 
   const visibleOrders = orders.filter(canViewOrder)
   const visibleNotifications = notifications.filter((notification) => notification.userId === currentUserId)
 
   React.useEffect(() => {
-    try {
-      const savedOrders = window.localStorage.getItem(ORDERS_STORAGE_KEY)
-      const savedNotifications = window.localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)
-      if (savedOrders) {
-        const saved = (JSON.parse(savedOrders) as OrderRecord[])
-          .filter((order) => !retiredDemoOrderIds.has(order.id))
-        const settings = initialSettingsData.current
-        setOrders(saved.map((order) => {
-          const supervisorId = settings.users.find(
-            (user) =>
-              user.roleIds.includes("role-dept_head") &&
-              user.departmentIds.some((id) => order.departmentIds.includes(id)),
-          )?.id
-          const incorrectlySkipped =
-            order.currentStep === "warehouse" &&
-            order.status === "warehouse_check" &&
-            order.applicantId === supervisorId &&
-            order.createdByUserId !== supervisorId &&
-            order.lastActorUserId === order.createdByUserId
-          const normalized = incorrectlySkipped
-            ? {
-                ...order,
-                status: "supervisor_review" as const,
-                currentStep: "department_supervisor" as const,
-                waitingForUserId: supervisorId,
-              }
-            : order
-          const withHistory = {
-            ...normalized,
-            comments: normalized.comments ?? [],
-            workflowHistory: normalized.workflowHistory ?? [],
-          }
-          const warehouseResponsibleUserId = settings.warehouses.find(
-            (warehouse) => warehouse.id === withHistory.warehouseId,
-          )?.responsibleUserId
-          if (withHistory.currentStep === "procurement_supervisor") {
-            return {
-              ...withHistory,
-              currentStep: "warehouse_receipt" as const,
-              status: "in_progress" as const,
-              waitingForUserId: warehouseResponsibleUserId,
-            }
-          }
-          if (withHistory.currentStep === "warehouse_supervisor") {
-            return {
-              ...withHistory,
-              currentStep: "complete" as const,
-              status: "approved" as const,
-              waitingForUserId: undefined,
-            }
-          }
-          if (withHistory.currentStep !== "warehouse" || withHistory.status !== "warehouse_check") {
-            return withHistory
-          }
-          return withHistory.waitingForUserId === warehouseResponsibleUserId
-            ? withHistory
-            : { ...withHistory, waitingForUserId: warehouseResponsibleUserId }
-        }))
-      }
-      if (savedNotifications) {
-        setNotifications((JSON.parse(savedNotifications) as WorkflowNotification[])
-          .filter((notification) => !retiredDemoOrderIds.has(notification.orderId)))
-      }
-    } finally {
-      setStorageReady(true)
-    }
-  }, [setOrders])
-
-  React.useEffect(() => {
-    if (!storageReady) return
-    window.localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders))
-    window.localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications))
-  }, [notifications, orders, storageReady])
-
-  React.useEffect(() => {
-    if (!currentUserId || !storageReady) return
+    if (!currentUserId) return
     let cancelled = false
     let loading = false
     async function refresh() {
@@ -186,11 +86,13 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       try {
         const serverOrders = await loadAppRecords<OrderRecord>("orders")
         if (!cancelled && revision === orderRevision.current) {
+          setSyncError(false)
+          setLastUpdated(new Date().toISOString())
           updateOrders(serverOrders.sort((left, right) => right.createdAt.localeCompare(left.createdAt)))
         }
-      } finally { loading = false }
+      } finally { loading = false; if (!cancelled) setStorageReady(true) }
     }
-    const refreshSafely = () => { void refresh().catch(() => undefined) }
+    const refreshSafely = () => { void refresh().catch(() => { if (!cancelled) setSyncError(true) }) }
     refreshSafely()
     const interval = window.setInterval(refreshSafely, 30_000)
     window.addEventListener("focus", refreshSafely)
@@ -201,14 +103,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", refreshSafely)
       window.removeEventListener("factory-os:orders-changed", refreshSafely)
     }
-  }, [currentUserId, storageReady])
+  }, [currentUserId])
 
   React.useEffect(() => {
     if (!currentUserId) return
     let cancelled = false
     async function refreshNotifications() {
       try {
-        const response = await fetch("/api/notifications", { cache: "no-store" })
+        const response = await fetch("/api/notifications", { cache: "no-store", signal: AbortSignal.timeout(15000) })
         if (!response.ok) return
         const payload = await response.json() as { notifications?: WorkflowNotification[] }
         if (cancelled) return
@@ -216,7 +118,7 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
           const merged = new Map((payload.notifications ?? []).map((item) => [item.id, item]))
           for (const item of current) {
             const remote = merged.get(item.id)
-            merged.set(item.id, remote ? { ...item, ...remote, event: item.event } : item)
+            merged.set(item.id, remote ? { ...item, ...remote, event: remote.event ?? item.event, read: remote.read || item.read } : item)
           }
           return [...merged.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100)
         })
@@ -291,17 +193,6 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  function appendWorkflowHistory(
-    order: Pick<OrderRecord, "workflowHistory">,
-    step: Exclude<WorkflowStep, "complete">,
-    action: WorkflowHistoryEntry["action"],
-    createdAt = new Date().toISOString(),
-  ) {
-    return [
-      ...(order.workflowHistory ?? []),
-      { step, action, actorUserId: currentUserId, createdAt },
-    ] satisfies WorkflowHistoryEntry[]
-  }
 
   function hasValidRequestAssignments(
     applicantDepartmentIds: readonly string[],
@@ -378,68 +269,16 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     return persisted
   }
 
-  function resubmitOrder(
-    orderId: string,
-    changes: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">,
-  ) {
+  async function resubmitOrder(orderId: string, changes: Omit<OrderRecord, "id" | "number" | "createdAt" | "status" | "createdByUserId" | "currentStep" | "waitingForUserId" | "lastActorUserId">) {
     const existing = orders.find((order) => order.id === orderId)
-    if (!can("requests.create") || !existing || existing.financeCancellation || existing.status !== "rejected" || existing.createdByUserId !== currentUserId) {
-      return undefined
-    }
-    const creator = data.users.find((user) => user.id === currentUserId)
-    const requestedApplicantId = creator
-      ? resolveOrderApplicantId(creator, changes.applicantId)
-      : ""
-    const requestedApplicant = data.users.find((user) => user.id === requestedApplicantId)
-    const departmentSupervisor = data.users.find(
-      (user) =>
-        user.roleIds.includes("role-dept_head") &&
-        user.departmentIds.some((id) => changes.departmentIds.includes(id)),
-    )
-    const applicant = creator?.roleIds.includes("role-requester") &&
-          !requestedApplicant?.roleIds.includes("role-dept_head")
-        ? departmentSupervisor
-        : requestedApplicant
-    if (
-      !creator ||
-      !applicant ||
-      !canCreateRequestForApplicant(creator.roleIds, applicant.roleIds) ||
-      !hasValidRequestAssignments(applicant.departmentIds, changes)
-    ) {
-      return undefined
-    }
-    const normalizedChanges = { ...changes, applicantId: applicant.id }
-    const supervisorId = assigneeFor("department_supervisor", normalizedChanges)
-    const skipSupervisor = creator.roleIds.includes("role-dept_head") ||
-      shouldSkipSupervisorApproval(currentUserId, supervisorId)
-    const currentStep: WorkflowStep = skipSupervisor ? "warehouse" : "department_supervisor"
-    const resubmittedAt = new Date().toISOString()
-    const updated: OrderRecord = {
-      ...existing,
-      ...normalizedChanges,
-      status: skipSupervisor ? "warehouse_check" : "supervisor_review",
-      currentStep,
-      waitingForUserId: assigneeFor(currentStep, normalizedChanges),
-      lastActorUserId: currentUserId,
-      procurementSpecialistUserId: undefined,
-      procurementLineAssignments: undefined,
-      procurementProgress: undefined,
-      lines: normalizedChanges.lines.map((line) => ({
-        ...line,
-        availableQuantity: undefined,
-        fulfillmentStatus: "pending",
-      })),
-      workflowHistory: skipSupervisor
-        ? appendWorkflowHistory(
-            existing,
-            "department_supervisor",
-            "skipped",
-            resubmittedAt,
-          )
-        : existing.workflowHistory ?? [],
-    }
+    const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ changes, revision: existing?.revision ?? 0 }),
+    })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error ?? "resubmit-failed")
+    const updated = result.order as OrderRecord
     setOrders((current) => current.map((order) => order.id === orderId ? updated : order))
-    notify(updated.waitingForUserId, updated, { kind: "action_required" })
     return updated
   }
 
@@ -496,18 +335,8 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
         return true
       } catch { return false }
     }
-    const updated = {
-      ...order,
-      status: "rejected" as const,
-      currentStep: "complete" as const,
-      waitingForUserId: undefined,
-      lastActorUserId: currentUserId,
-      workflowHistory: appendWorkflowHistory(
-        order,
-        order.currentStep as Exclude<WorkflowStep, "complete">,
-        "rejected",
-      ),
-    }
+    let updated: OrderRecord
+    try { updated = await runOrderWorkflowAction<OrderRecord>(orderId, "reject") } catch { return false }
     setOrders((current) => current.map((item) => item.id === orderId ? updated : item))
     const supervisorUserId = assigneeFor("department_supervisor", order)
     setNotifications((current) => current.filter(
@@ -643,9 +472,14 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     for (const userId of recipients) notify(userId, updated, event)
   }
 
-  function markNotificationsRead() {
-    setNotifications((current) => current.map((item) => item.userId === currentUserId ? { ...item, read: true } : item))
-    void fetch("/api/notifications", { method: "PATCH" })
+  async function markNotificationsRead(ids?: string[]) {
+    try {
+      const response = await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids ? { ids } : { all: true }) })
+      if (!response.ok) return false
+      setNotifications((current) => current.map((item) => item.userId === currentUserId && (!ids || ids.includes(item.id)) ? { ...item, read: true } : item))
+      window.dispatchEvent(new Event("factory-os:notifications-changed"))
+      return true
+    } catch { return false }
   }
 
   function addOrderComment(orderId: string, body: string, replyToId?: string) {
@@ -669,13 +503,17 @@ export function OrdersProvider({ children }: { children: React.ReactNode }) {
     return true
   }
 
-  function deleteOrders(ids: string[]) {
-    if (!can("requests.edit")) return
-    setOrders((current) => current.filter((order) => !ids.includes(order.id) || !canViewOrder(order)))
+  async function deleteOrders(ids: string[]) {
+    const response = await fetch("/api/orders/archive", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: ids.map((id) => ({ id, revision: orders.find((order) => order.id === id)?.revision ?? 0 })) }),
+    })
+    if (!response.ok) throw new Error("archive-failed")
+    setOrders((current) => current.filter((order) => !ids.includes(order.id)))
   }
 
   return (
-    <OrdersContext.Provider value={{ orders: visibleOrders, notifications: visibleNotifications, storageReady, addOrder, resubmitOrder, approveOrder, rejectOrder, submitWarehouseReport, assignProcurementSpecialist, submitProcurementOffers, reviewProcurementOffers, addOrderComment, markNotificationsRead, deleteOrders }}>
+    <OrdersContext.Provider value={{ orders: visibleOrders, notifications: visibleNotifications, storageReady, syncError, lastUpdated, addOrder, resubmitOrder, approveOrder, rejectOrder, submitWarehouseReport, assignProcurementSpecialist, submitProcurementOffers, reviewProcurementOffers, addOrderComment, markNotificationsRead, deleteOrders }}>
       {children}
     </OrdersContext.Provider>
   )

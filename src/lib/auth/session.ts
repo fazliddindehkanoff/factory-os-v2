@@ -78,3 +78,9 @@ export async function destroySession() {
 
   cookieStore.delete(SESSION_COOKIE_NAME)
 }
+
+export async function requireTelegramSession(lang: Locale, next?: string) {
+  const session = await getSessionUser()
+  if (!session) redirect(`/${lang}/telegram${next ? `?next=${encodeURIComponent(next)}` : ""}`)
+  return session
+}

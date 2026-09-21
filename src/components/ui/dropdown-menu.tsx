@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 
+import { useFloatingLayer, useOverlayTheme } from "./overlay-layer"
 import { cn } from "@/lib/utils"
 import { ChevronRightIcon, CheckIcon } from "lucide-react"
 
@@ -30,9 +31,12 @@ function DropdownMenuContent({
     MenuPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  const zIndex = useFloatingLayer()
+  const theme = useOverlayTheme()
   return (
-    <MenuPrimitive.Portal>
+    <MenuPrimitive.Portal {...theme}>
       <MenuPrimitive.Positioner
+        style={{ zIndex }}
         className="isolate z-50 outline-none"
         align={align}
         alignOffset={alignOffset}

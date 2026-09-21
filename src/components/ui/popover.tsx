@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 
+import { useFloatingLayer, useOverlayTheme } from "./overlay-layer"
 import { cn } from "@/lib/utils"
 
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
@@ -25,9 +26,12 @@ function PopoverContent({
     PopoverPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  const zIndex = useFloatingLayer()
+  const theme = useOverlayTheme()
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal {...theme}>
       <PopoverPrimitive.Positioner
+        style={{ zIndex }}
         align={align}
         alignOffset={alignOffset}
         side={side}

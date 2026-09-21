@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
+import { useFloatingLayer, useOverlayTheme } from "./overlay-layer"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
@@ -70,9 +71,12 @@ function SelectContent({
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
+  const zIndex = useFloatingLayer()
+  const theme = useOverlayTheme()
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal {...theme}>
       <SelectPrimitive.Positioner
+        style={{ zIndex }}
         side={side}
         sideOffset={sideOffset}
         align={align}

@@ -2,6 +2,7 @@
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 
+import { useFloatingLayer, useOverlayTheme } from "./overlay-layer"
 import { cn } from "@/lib/utils"
 
 function TooltipProvider({
@@ -38,9 +39,12 @@ function TooltipContent({
     TooltipPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  const zIndex = useFloatingLayer()
+  const theme = useOverlayTheme()
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal {...theme}>
       <TooltipPrimitive.Positioner
+        style={{ zIndex }}
         align={align}
         alignOffset={alignOffset}
         side={side}

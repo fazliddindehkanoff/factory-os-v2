@@ -1,3 +1,5 @@
+import Link from "next/link"
+import { uxCopy } from "@/lib/ux-copy"
 import { ClipboardListIcon } from "lucide-react"
 import { notFound } from "next/navigation"
 
@@ -7,14 +9,14 @@ import {
 } from "@/components/telegram/telegram-orders-filters"
 import { TelegramOrdersHero } from "@/components/telegram/telegram-orders-hero"
 import { TelegramShell } from "@/components/telegram/telegram-shell"
-import { requireSession } from "@/lib/auth/session"
+import { requireTelegramSession } from "@/lib/auth/session"
 import { isLocale } from "@/lib/i18n"
 import { matchesTelegramOrderFilters, type TelegramOrderFilterValues } from "@/lib/telegram-order-filters"
 import { telegramCopy } from "@/lib/telegram-copy"
 import { getTelegramOrders, getTelegramUserProfile } from "@/lib/telegram-orders"
 
 const validTypes = new Set(["material", "service"])
-const validStatuses = new Set(["draft", "in_review", "revision_requested", "approved", "rejected", "cancelled"])
+const validStatuses = new Set(["draft", "supervisor_review", "warehouse_check", "in_progress", "fulfilled", "revision_requested", "approved", "rejected", "cancelled"])
 const validUrgencies = new Set(["normal", "high", "urgent", "critical", "urgent-group"])
 
 function queryValue(value: string | string[] | undefined) {
@@ -24,7 +26,7 @@ function queryValue(value: string | string[] | undefined) {
 export default async function Page({ params, searchParams }: PageProps<"/[lang]/telegram/orders">) {
   const { lang } = await params
   if (!isLocale(lang)) notFound()
-  const session = await requireSession(lang)
+  const session = await requireTelegramSession(lang, `/${lang}/telegram/orders`)
   const query = await searchParams
   const waitingOnly = queryValue(query.scope) === "waiting"
   const [allOrders, profile, copy] = await Promise.all([
@@ -35,8 +37,8 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
   const waitingCount = allOrders.filter((order) => order.waitingForMe).length
   const urgentCount = allOrders.filter((order) => order.urgency === "urgent" || order.urgency === "critical").length
   const localeTag = lang === "ru" ? "ru-RU" : lang === "tr" ? "tr-TR" : "uz-UZ"
-  const departments = [...new Set(allOrders.map((order) => order.department))].sort((a, b) => a.localeCompare(b, localeTag))
-  const warehouses = [...new Set(allOrders.map((order) => order.warehouse))].sort((a, b) => a.localeCompare(b, localeTag))
+  const departments = [...new Map(allOrders.flatMap((order) => order.departmentOptions.map((option) => [option.value, option] as const))).values()]
+  const warehouses = [...new Map(allOrders.map((order) => [order.warehouseId, { value: order.warehouseId, label: order.warehouse }])).values()]
   const rawType = queryValue(query.type)
   const rawStatus = queryValue(query.status)
   const rawUrgency = queryValue(query.urgency)
@@ -47,8 +49,8 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
     type: validTypes.has(rawType) ? rawType : "",
     status: validStatuses.has(rawStatus) ? rawStatus : "",
     urgency: validUrgencies.has(rawUrgency) ? rawUrgency : "",
-    department: departments.includes(rawDepartment) ? rawDepartment : "",
-    warehouse: warehouses.includes(rawWarehouse) ? rawWarehouse : "",
+    department: departments.some((item) => item.value === rawDepartment) ? rawDepartment : "",
+    warehouse: warehouses.some((item) => item.value === rawWarehouse) ? rawWarehouse : "",
   }
   const activeFilterCount = Object.values(filters).filter(Boolean).length
   const orders = allOrders.filter((order) => matchesTelegramOrderFilters(order, filters, waitingOnly, localeTag))
@@ -128,7 +130,8 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
             <ClipboardListIcon className="size-8" />
           </span>
           <h2 className="mt-4 text-base font-bold text-[var(--tg-text)]">{waitingOnly && !activeFilterCount ? copy.noWaiting : copy.noOrders}</h2>
-          <p className="mt-1 max-w-64 text-[13px] leading-5 text-[var(--tg-text-secondary)]">{waitingOnly && !activeFilterCount ? copy.noWaitingBody : copy.noOrdersBody}</p>
+          <p className="mt-1 max-w-64 text-[13px] leading-5 text-[var(--tg-text-secondary)]">{activeFilterCount ? uxCopy[lang].noResults : waitingOnly ? copy.noWaitingBody : copy.noOrdersBody}</p>
+          <Link className="mt-4 inline-flex min-h-11 items-center text-primary underline" href={activeFilterCount ? `/${lang}/telegram/orders${waitingOnly ? "?scope=waiting" : ""}` : `/${lang}/orders`}>{activeFilterCount ? uxCopy[lang].clear : uxCopy[lang].openWeb}</Link>
         </div>
       )}
     </TelegramShell>

@@ -3,15 +3,19 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { BellIcon, MoonIcon, SunIcon } from "lucide-react"
+import { RefreshCwIcon, BellIcon, MoonIcon, SunIcon } from "lucide-react"
 
+import { OverlayTheme } from "@/components/ui/overlay-layer"
 import { TelegramBottomNav } from "@/components/telegram/telegram-bottom-nav"
+import { uxCopy } from "@/lib/ux-copy"
+import { SyncStatus } from "@/components/sync-status"
 import type { Locale } from "@/lib/i18n"
 import type { TelegramCopy } from "@/lib/telegram-copy"
 
 type TelegramTheme = "light" | "dark"
 
 export function TelegramChrome({
+  refreshedAt,
   lang,
   copy,
   title,
@@ -20,6 +24,7 @@ export function TelegramChrome({
   hero,
   children,
 }: {
+  refreshedAt: string
   lang: Locale
   copy: TelegramCopy
   title: string
@@ -33,31 +38,42 @@ export function TelegramChrome({
   const [theme, setTheme] = React.useState<TelegramTheme>("light")
 
   React.useEffect(() => {
-    const savedTheme = window.localStorage.getItem("factory-os-telegram-theme")
-    const telegramTheme = (window.Telegram?.WebApp as { colorScheme?: TelegramTheme } | undefined)?.colorScheme
-    const preferredTheme = savedTheme === "dark" || savedTheme === "light" ? savedTheme : telegramTheme === "dark" ? "dark" : "light"
-    const frame = window.requestAnimationFrame(() => setTheme(preferredTheme))
-    return () => window.cancelAnimationFrame(frame)
+    const app = window.Telegram?.WebApp
+    const syncTheme = () => {
+      let saved: string | null = null
+      try { saved = window.localStorage.getItem("factory-os-telegram-theme") } catch {}
+      setTheme(saved === "dark" || saved === "light" ? saved : app?.colorScheme === "dark" ? "dark" : "light")
+    }
+    const frame = requestAnimationFrame(syncTheme)
+    app?.onEvent?.("themeChanged", syncTheme)
+    return () => { cancelAnimationFrame(frame); app?.offEvent?.("themeChanged", syncTheme) }
   }, [])
-
   React.useEffect(() => {
-    window.localStorage.setItem("factory-os-telegram-theme", theme)
     const app = window.Telegram?.WebApp
     if (app?.isVersionAtLeast?.("6.1")) {
       app.setHeaderColor?.("#1a2b4a")
       app.setBackgroundColor?.(theme === "dark" ? "#101827" : "#f4f6f9")
     }
   }, [theme])
+  const [refreshing, startRefresh] = React.useTransition()
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark"
+    setTheme(next)
+    try { window.localStorage.setItem("factory-os-telegram-theme", next) } catch {}
+  }
 
   function changeLanguage(nextLang: Locale) {
+    void fetch("/api/preferences", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ locale: nextLang }), keepalive: true }).catch(() => {})
     const nextPath = pathname.replace(/^\/(uz|ru|tr)(?=\/|$)/, `/${nextLang}`)
-    router.push(`${nextPath}${window.location.search}${window.location.hash}`)
+    const search = new URLSearchParams(window.location.search)
+    for (const key of ["return", "back", "next"]) { const value = search.get(key); if (value?.startsWith(`/${lang}/`)) search.set(key, value.replace(`/${lang}/`, `/${nextLang}/`)) }
+    router.push(`${nextPath}${search.size ? `?${search}` : ""}${window.location.hash}`)
   }
 
   return (
-    <div className="telegram-app min-h-dvh [font-family:var(--font-geist-sans),system-ui,sans-serif]" data-theme={theme}>
+    <OverlayTheme.Provider value={theme}><div className="telegram-app min-h-dvh [font-family:var(--font-geist-sans),system-ui,sans-serif]" data-theme={theme}>
       <div className="tg-phone mx-auto flex min-h-dvh max-w-[560px] flex-col overflow-x-hidden shadow-[0_0_36px_rgba(15,23,42,0.08)]">
-        <header className="sticky top-0 z-40 bg-[#1a2b4a] pt-[env(safe-area-inset-top)] text-white">
+        <header className="sticky top-0 z-40 bg-[#1a2b4a] pt-[max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px))] text-white">
           <div className="flex min-h-[84px] items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#9db0d6]">{copy.appName}</p>
@@ -100,7 +116,7 @@ export function TelegramChrome({
                 type="button"
                 aria-label={copy.switchTheme}
                 aria-pressed={theme === "dark"}
-                onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+                onClick={toggleTheme}
                 className="flex size-11 touch-manipulation items-center justify-center rounded-[12px] bg-white/10 text-[#dce5f4] ring-1 ring-inset ring-white/10 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 active:bg-white/20"
               >
                 {theme === "dark" ? <SunIcon className="size-[19px]" strokeWidth={1.9} /> : <MoonIcon className="size-[19px]" strokeWidth={1.9} />}
@@ -110,10 +126,12 @@ export function TelegramChrome({
         </header>
         {hero}
         <main id="telegram-main" className="flex-1 px-4 pb-28 pt-4">
+          <div className="mb-3 flex items-center justify-between gap-2"><time className="text-xs text-[var(--tg-text-muted)]" dateTime={refreshedAt}>{uxCopy[lang].updated}: {new Date(refreshedAt).toLocaleTimeString(lang, { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" })}</time><button type="button" disabled={refreshing} className="flex min-h-11 items-center gap-2 px-3 text-sm text-[var(--tg-text-secondary)]" onClick={() => { window.dispatchEvent(new Event("factory-os:orders-changed")); startRefresh(() => router.refresh()) }}><RefreshCwIcon className={refreshing ? "size-4 animate-spin motion-reduce:animate-none" : "size-4"} />{uxCopy[lang].refresh}</button></div>
+          <SyncStatus lang={lang} />
           {children}
         </main>
         <TelegramBottomNav lang={lang} copy={copy} />
       </div>
-    </div>
+    </div></OverlayTheme.Provider>
   )
 }

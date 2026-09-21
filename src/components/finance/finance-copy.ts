@@ -1,5 +1,6 @@
 export const financeCopy = {
   uz: {
+    orderDetails: "Buyurtma haqida batafsil", orderLifecycle: "Buyurtma to‘lovlari", lifecycle: { all: "Barcha buyurtmalar", unpaid: "To‘lov boshlanmagan", in_progress: "Jarayonda", closed: "To‘liq to‘langan", cancelled: "Bekor qilingan" }, scopeNote: "Hisoblar sizga ko‘rinadigan to‘lovlar bo‘yicha. To‘liq to‘langan — barcha to‘lovlar bajarilgan; yetkazib berish yakunlanganini bildirmaydi.", outstanding: "Ochiq qoldiq", overdue: "Muddati o‘tgan qoldiq", paidTotal: "Jami to‘langan", orderCount: "ta buyurtma", paymentList: "To‘lovlar ro‘yxati",
     title: "Moliya", flow: "Ta’minot rahbari → Direktor → Moliyachi", all: "Barchasi", mine: "Meni kutayotganlar", search: "Buyurtma, yetkazib beruvchi yoki INN…",
     stages: { head_review: "Ta’minot rahbarida", director_review: "Direktorda", payment: "To‘lov kutilmoqda", returned: "Qayta ko‘rish", paid: "To‘landi", cancelled: "Bekor qilindi" },
     actions: { approve: "Tasdiqlash", return: "Qayta ko‘rishga", cancel: "Bekor qilish", paid: "To‘landi", resubmit: "Qayta yuborish" },
@@ -11,6 +12,7 @@ export const financeCopy = {
     noAccess: "Moliya bo‘limiga kirish ruxsati yo‘q", pending: "Kutilayotgan summa", count: "ta to‘lov", mixed: "Tanlangan to‘lovlar uchun umumiy amal yo‘q. Bir bosqichdagi to‘lovlarni tanlang.",
   },
   ru: {
+    orderDetails: "Подробнее о заявке", orderLifecycle: "Оплата заявок", lifecycle: { all: "Все заявки", unpaid: "Оплата не начата", in_progress: "В процессе", closed: "Полностью оплачены", cancelled: "Отменены" }, scopeNote: "Расчёт по доступным вам платежам. Полная оплата не означает завершение поставки.", outstanding: "Открытый остаток", overdue: "Просроченный остаток", paidTotal: "Всего оплачено", orderCount: "заявок", paymentList: "Список платежей",
     title: "Финансы", flow: "Руководитель снабжения → Директор → Финансист", all: "Все", mine: "Ожидают меня", search: "Заявка, поставщик или ИНН…",
     stages: { head_review: "У руководителя снабжения", director_review: "У директора", payment: "Ожидает оплаты", returned: "На доработке", paid: "Оплачено", cancelled: "Отменено" },
     actions: { approve: "Согласовать", return: "На доработку", cancel: "Отменить", paid: "Оплачено", resubmit: "Отправить повторно" },
@@ -22,6 +24,7 @@ export const financeCopy = {
     noAccess: "Нет доступа к финансам", pending: "Ожидающая сумма", count: "платежей", mixed: "Нет общего действия. Выберите платежи одного этапа.",
   },
   tr: {
+    orderDetails: "Talep ayrıntıları", orderLifecycle: "Talep ödemeleri", lifecycle: { all: "Tüm talepler", unpaid: "Ödeme başlamadı", in_progress: "Devam ediyor", closed: "Tamamen ödendi", cancelled: "İptal edildi" }, scopeNote: "Hesaplar erişebildiğiniz ödemelere dayanır. Tam ödeme teslimatın tamamlandığı anlamına gelmez.", outstanding: "Açık bakiye", overdue: "Gecikmiş bakiye", paidTotal: "Toplam ödenen", orderCount: "talep", paymentList: "Ödemeler",
     title: "Finans", flow: "Satın alma yöneticisi → Direktör → Finans uzmanı", all: "Tümü", mine: "Beni bekleyenler", search: "Talep, tedarikçi veya vergi numarası…",
     stages: { head_review: "Satın alma yöneticisinde", director_review: "Direktörde", payment: "Ödeme bekliyor", returned: "Düzeltme bekliyor", paid: "Ödendi", cancelled: "İptal edildi" },
     actions: { approve: "Onayla", return: "Düzeltmeye gönder", cancel: "İptal et", paid: "Ödendi", resubmit: "Yeniden gönder" },

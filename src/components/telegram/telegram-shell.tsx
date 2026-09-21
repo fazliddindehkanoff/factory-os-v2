@@ -26,7 +26,7 @@ export async function TelegramShell({
   const unreadCount = notifications.filter((notification) => !notification.readAt).length
 
   return (
-    <TelegramChrome lang={lang} copy={copy} title={title} subtitle={subtitle} unreadCount={unreadCount} hero={hero}>
+    <TelegramChrome refreshedAt={new Date().toISOString()} lang={lang} copy={copy} title={title} subtitle={subtitle} unreadCount={unreadCount} hero={hero}>
       {children}
     </TelegramChrome>
   )

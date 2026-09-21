@@ -1,3 +1,5 @@
+import { saveUserLocale } from "@/lib/user-locale"
+import { isLocale } from "@/lib/i18n"
 import { and, eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
@@ -34,6 +36,8 @@ export async function POST(request: Request) {
     .limit(1)
   if (!user) return NextResponse.json({ error: "telegram-account-not-linked" }, { status: 403 })
 
+  const locale = body && typeof body === "object" && "lang" in body && typeof body.lang === "string" && isLocale(body.lang) ? body.lang : "uz"
+  await saveUserLocale(user.id, locale)
   await createSession(user.id)
   return NextResponse.json({ ok: true })
 }

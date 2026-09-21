@@ -35,6 +35,9 @@ function optionMatchesSearch(option: SearchableSelectOption, search: string) {
 }
 
 export function SearchableSelect({
+  id,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedby,
   options,
   value,
   onChange,
@@ -45,6 +48,9 @@ export function SearchableSelect({
   disabled = false,
   createFromSearch,
 }: {
+  id?: string
+  "aria-invalid"?: boolean
+  "aria-describedby"?: string
   options: SearchableSelectOption[]
   value: string
   onChange: (value: string) => void
@@ -73,6 +79,9 @@ export function SearchableSelect({
   return (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger
+        id={id}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedby}
         type="button"
         disabled={disabled}
         aria-label={ariaLabel}

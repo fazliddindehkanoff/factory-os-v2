@@ -836,8 +836,9 @@ function MultiSelectField({ label, name, form, updateField, options, messages }:
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label>{label}</Label>
+      <Label htmlFor={name}>{label}</Label>
       <SearchableMultiSelect
+        id={name}
         options={options}
         value={(form[name] as string[]) ?? []}
         onChange={(value) => updateField(name, value)}

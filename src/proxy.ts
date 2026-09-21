@@ -15,7 +15,7 @@ export function proxy(request: NextRequest) {
     const isTelegramBootstrap = pathname === `/${firstSegment}/telegram`
     if (!isLoginPage && !isTelegramBootstrap && !hasSession) {
       const loginUrl = request.nextUrl.clone()
-      loginUrl.pathname = `/${firstSegment}/login`
+      loginUrl.pathname = pathname.startsWith(`/${firstSegment}/telegram/`) ? `/${firstSegment}/telegram` : `/${firstSegment}/login`
       loginUrl.search = ""
       loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`)
       return NextResponse.redirect(loginUrl)

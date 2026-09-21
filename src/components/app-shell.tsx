@@ -1,3 +1,4 @@
+import { SyncStatus } from "@/components/sync-status"
 import type { ReactNode } from "react"
 import { cookies } from "next/headers"
 
@@ -69,6 +70,7 @@ export async function AppShell({
           <DashboardHeaderActions lang={lang} messages={messages} />
         </header>
         <div className="flex min-w-0 flex-1 flex-col pt-5 md:pt-6">
+          <SyncStatus lang={lang} />
           {children}
         </div>
       </SidebarInset>

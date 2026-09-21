@@ -3,7 +3,6 @@
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import {
-  AudioLinesIcon,
   ClipboardListIcon,
   FactoryIcon,
   LayoutDashboardIcon,
@@ -12,13 +11,11 @@ import {
   PlusIcon,
   Settings2Icon,
   TruckIcon,
-  TerminalIcon,
 } from "lucide-react"
 
 import { useAuthorization } from "@/components/auth/use-authorization"
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
-import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
   SidebarContent,
@@ -57,11 +54,6 @@ export function AppSidebar({ lang, messages, ...props }: AppSidebarProps) {
       isActive: pathname.endsWith(`/settings/${item.section}`),
     }))
   const data = {
-    teams: [
-      { name: "Acme Inc", logo: <FactoryIcon />, plan: "Enterprise" },
-      { name: "Acme Corp.", logo: <AudioLinesIcon />, plan: "Startup" },
-      { name: "Evil Corp.", logo: <TerminalIcon />, plan: "Free" },
-    ],
     navMain: [
       {
         title: messages.dashboard,
@@ -112,11 +104,10 @@ export function AppSidebar({ lang, messages, ...props }: AppSidebarProps) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher
-          teams={data.teams}
-          teamsLabel={messages.teams}
-          addTeamLabel={messages.addTeam}
-        />
+        <div className="flex min-h-12 items-center gap-3 px-2 py-2">
+          <FactoryIcon className="size-6 shrink-0 text-primary" aria-hidden="true" />
+          <span className="font-semibold group-data-[collapsible=icon]:hidden">Factory OS</span>
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} label={messages.platform} />

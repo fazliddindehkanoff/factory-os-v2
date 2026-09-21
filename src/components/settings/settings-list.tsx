@@ -100,6 +100,7 @@ export function SettingsList({
   React.useEffect(() => {
     const currentPageIds = pageIdKey ? pageIdKey.split("\u0000") : []
     function handleShortcut(event: KeyboardEvent) {
+      if (document.querySelector('[data-slot="dialog-content"][data-open]')) return
       if (event.key === "Escape") {
         setSelectedIds((current) => current.size ? new Set() : current)
         return

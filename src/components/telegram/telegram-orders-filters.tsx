@@ -1,4 +1,5 @@
 "use client"
+import { uxCopy } from "@/lib/ux-copy"
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -20,8 +21,8 @@ export function TelegramOrdersFilters({
   copy: TelegramCopy
   values: TelegramOrderFilterValues
   waitingOnly: boolean
-  departments: string[]
-  warehouses: string[]
+  departments: Array<{ value: string; label: string }>
+  warehouses: Array<{ value: string; label: string }>
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -44,7 +45,7 @@ export function TelegramOrdersFilters({
     <details className="tg-card group mb-4 overflow-hidden rounded-[14px] border shadow-[0_1px_2px_rgba(16,30,60,0.05)]" open={activeCount > 0}>
       <summary className="flex min-h-12 cursor-pointer touch-manipulation list-none items-center justify-between gap-3 px-3.5 text-[13px] font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2d7dd2] [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 items-center gap-2">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-[#e7f1fb] text-[#2d7dd2]">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-[9px] bg-[#e7f1fb] text-[var(--tg-link,#2365a9)]">
             <SlidersHorizontalIcon className="size-4" />
           </span>
           <span>{copy.filters}</span>
@@ -78,12 +79,12 @@ export function TelegramOrdersFilters({
           ]} />
           <FilterSelect label={copy.statusLabel} name="status" value={values.status} allLabel={copy.allOptions} options={Object.entries(copy.status)} />
           <FilterSelect label={copy.urgency} name="urgency" value={values.urgency} allLabel={copy.allOptions} options={[
-            ["urgent-group", copy.urgentOrders],
+            ["urgent-group", uxCopy[lang].urgentGroup],
             ...Object.entries(copy.urgencyLabels),
           ]} />
-          <FilterSelect label={copy.department} name="department" value={values.department} allLabel={copy.allOptions} options={departments.map((value) => [value, value])} />
+          <FilterSelect label={copy.department} name="department" value={values.department} allLabel={copy.allOptions} options={departments.map((item) => [item.value, item.label])} />
           <div className="col-span-2">
-            <FilterSelect label={copy.warehouse} name="warehouse" value={values.warehouse} allLabel={copy.allOptions} options={warehouses.map((value) => [value, value])} />
+            <FilterSelect label={copy.warehouse} name="warehouse" value={values.warehouse} allLabel={copy.allOptions} options={warehouses.map((item) => [item.value, item.label])} />
           </div>
         </div>
 

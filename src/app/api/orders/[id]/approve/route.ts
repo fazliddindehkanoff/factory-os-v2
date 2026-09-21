@@ -117,6 +117,7 @@ export async function POST(
   }
 
   const storedOrder = row.payload
+  if (storedOrder.archivedAt) return NextResponse.json({ error: "order-not-found" }, { status: 404 })
   const wantsPlacement = request.headers.get("content-type")?.startsWith("multipart/form-data")
   if (wantsPlacement && !getProcurementLinesAtStep(storedOrder, "procurement_order", session.userId).length) {
     return NextResponse.json({ error: "not-current-assignee" }, { status: 403 })
@@ -206,6 +207,7 @@ export async function POST(
         for (const payment of newPayments) await tx.insert(appRecords).values({ namespace: "finance-payments", id: payment.id,
           payload: payment as unknown as Record<string, unknown>, createdByUserId: session.userId, updatedAt })
       }
+      updated.revision = (storedOrder.revision ?? 0) + 1
       const result = await tx.update(appRecords)
     .set({
       payload: updated as unknown as Record<string, unknown>,
