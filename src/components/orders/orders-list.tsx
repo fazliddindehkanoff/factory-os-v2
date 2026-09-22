@@ -57,6 +57,8 @@ import { downloadOrderAttachment } from "@/lib/order-attachments";
 import {
   getOrderActionView,
   getProcurementLinesAtStep,
+  getProcurementStepProgress,
+  type ProcurementLineProgress,
   getAssignedProcurementLineIds,
   getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
@@ -1256,6 +1258,9 @@ function WorkflowTimeline({
         subtitle: atStep.length ? `${[...new Set(atStep.map((item) => data.users.find((user) => user.id === item.waitingForUserId)?.fullName).filter(Boolean))].join(", ")} · ${atStep.length} ${lang === "ru" ? "позиций" : lang === "tr" ? "kalem" : "pozitsiya"}` : subtitle,
         state,
         isAutomatic,
+        progress: state === "current" && positionStates.length > 0 && index >= steps.indexOf("sourcing")
+          ? getProcurementStepProgress(order, step as ProcurementLineProgress["step"])
+          : undefined,
       };
     }),
   ];
@@ -1281,7 +1286,9 @@ function WorkflowTimeline({
               {index < items.length - 1 ? (
                 <span aria-hidden="true" className="absolute left-[9px] top-5 h-[calc(100%-0.25rem)] w-px bg-border" />
               ) : null}
-              <span
+              {"progress" in item && item.progress ? (
+                <StepProgressRing done={item.progress.done} total={item.progress.total} />
+              ) : <span
                 aria-hidden="true"
                 className={item.state === "completed"
                   ? "relative z-10 flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"
@@ -1292,11 +1299,16 @@ function WorkflowTimeline({
                       : "relative z-10 size-5 shrink-0 rounded-full border-2 border-muted-foreground/60 bg-background"}
               >
                 {item.state === "completed" ? <CheckIcon className="size-3" /> : null}
-              </span>
+              </span>}
               <div className="min-w-0 flex-1 -mt-0.5">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <p className="break-words text-sm font-medium">{item.title}</p>
                   <span className="text-xs text-muted-foreground">{stateLabel}</span>
+                  {"progress" in item && item.progress ? (
+                    <span className="font-mono text-xs tabular-nums text-primary">
+                      {item.progress.done}/{item.progress.total} · {Math.round((item.progress.done / item.progress.total) * 100)}%
+                    </span>
+                  ) : null}
                 </div>
                 <p className="mt-1 break-words text-xs text-muted-foreground">{item.subtitle}</p>
               </div>
@@ -1305,6 +1317,31 @@ function WorkflowTimeline({
         })}
       </ol>
     </section>
+  );
+}
+
+/** Current-step marker that fills as positions leave this step. */
+function StepProgressRing({ done, total }: { done: number; total: number }) {
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = total ? Math.min(1, done / total) : 0;
+  return (
+    <span aria-hidden="true" className="relative z-10 size-5 shrink-0 rounded-full bg-background ring-4 ring-primary/10">
+      <svg viewBox="0 0 20 20" className="size-5 -rotate-90">
+        <circle cx="10" cy="10" r={radius} fill="none" strokeWidth="2.5" className="stroke-primary/20" />
+        <circle
+          cx="10"
+          cy="10"
+          r={radius}
+          fill="none"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - ratio)}
+          className="stroke-primary transition-[stroke-dashoffset] duration-500 motion-reduce:transition-none"
+        />
+      </svg>
+    </span>
   );
 }
 

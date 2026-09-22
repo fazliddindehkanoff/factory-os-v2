@@ -16,7 +16,7 @@ import {
 
 import { useAuthorization } from "@/components/auth/use-authorization"
 import { ProcurementLineAssignment } from "@/components/orders/procurement-line-assignment"
-import { useProcurement } from "@/components/procurement/procurement-provider"
+import { directorCostReviewSteps, useProcurement } from "@/components/procurement/procurement-provider"
 import { useSettings } from "@/components/settings/settings-provider"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import type { Locale, Messages } from "@/lib/i18n"
-import { getAssignedProcurementLineIds, getProcurementLinesAtStep, getProcurementSuborderForSpecialist, type OrderRecord } from "@/lib/orders"
+import { getAssignedProcurementLineIds, getProcurementLinesAtStep, hasProcurementLinesAtSteps, getProcurementSuborderForSpecialist, type OrderRecord } from "@/lib/orders"
 import { orderPaymentCopy } from "./order-payment-copy"
 import { OrderPlacementSelection, type PlacementSelection } from "./order-placement-selection"
 import { countCoveredProcurementLines, getLocalDateInputValue, getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed, normalizeSupplierPhone, quotationLinesCoverRequirements, type ProcurementStage, type QuotationRecord } from "@/lib/procurement"
@@ -63,12 +63,7 @@ export function OrderProcurementPanel({ order, lang, messages, placement }: {
     return { ...quote, lines, amount: lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0),
       selected: quote.selected && lines.some((line) => !quote.selectedLineIds || quote.selectedLineIds.includes(line.orderLineId)) }
   }).filter((quote) => quote.lines.length > 0) : allCaseQuotes
-  const directorCanReviewCosts = isDirector && [
-    "director",
-    "procurement_order",
-    "warehouse_receipt",
-    "complete",
-  ].includes(order.currentStep)
+  const directorCanReviewCosts = isDirector && hasProcurementLinesAtSteps(order, directorCostReviewSteps)
   const approvedQuotations = caseQuotes.filter((quotation) => quotation.selected).map((quotation) => {
     const lines = quotation.lines.filter((line) => !quotation.selectedLineIds || quotation.selectedLineIds.includes(line.orderLineId))
     return { ...quotation, lines, amount: lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) }

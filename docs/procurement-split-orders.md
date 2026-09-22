@@ -32,6 +32,11 @@ The aggregate order step is the earliest unfinished position. Actor-specific
 action views expose their most advanced pending step, while sourcing and
 placement controls explicitly scope to their own eligible positions.
 
+Director cost review (offer list and selected expense) is shown whenever any
+position is at `director` or later, even if siblings keep the aggregate step at
+`sourcing`. In the workflow timeline, the current-step marker is a progress ring
+showing positions that have left that step out of all positions in the order.
+
 The waiting queue checks all active positions, so one order can wait for a
 specialist, procurement head and warehouse simultaneously. Draft offers do not
 advance sourcing. Head review/return and director approval/rejection affect

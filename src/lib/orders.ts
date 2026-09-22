@@ -283,6 +283,27 @@ export function getProcurementLinesAtStep(
   })
 }
 
+/** True when the order, or any of its independently progressing positions, is at one of `steps`. */
+export function hasProcurementLinesAtSteps(
+  order: Pick<OrderRecord, "currentStep" | "procurementProgress">,
+  steps: readonly WorkflowStep[],
+) {
+  return steps.includes(order.currentStep) ||
+    Object.values(order.procurementProgress ?? {}).some((state) => steps.includes(state.step))
+}
+
+/** Positions that have moved past `step`, out of all positions tracked by the procurement lane. */
+export function getProcurementStepProgress(
+  order: Pick<OrderRecord, "procurementProgress">,
+  step: ProcurementLineProgress["step"],
+) {
+  const states = Object.values(order.procurementProgress ?? {})
+  const index = workflowSteps.indexOf(step as (typeof workflowSteps)[number])
+  const done = states.filter((state) => state.step === "complete" ||
+    workflowSteps.indexOf(state.step as (typeof workflowSteps)[number]) > index).length
+  return { done, total: states.length }
+}
+
 /** Choose the user's most advanced actionable lane, without hiding other lines. */
 export function getOrderActionView(order: OrderRecord, userId?: string): OrderRecord {
   if (!order.procurementProgress || !userId) return order

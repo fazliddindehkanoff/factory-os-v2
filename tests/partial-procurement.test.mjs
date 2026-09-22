@@ -53,3 +53,17 @@ test("selected positions inherit offer methods; unapproved and already placed po
   order.placement = { lines: selected }
   assert.deepEqual(approvedPaymentLines(order, [quote]).map((line) => line.orderLineId), ["line-2"])
 })
+
+test("director review stays visible and step progress counts submitted positions while siblings are still sourcing", async () => {
+  const { getProcurementStepProgress, hasProcurementLinesAtSteps } = await import("../src/lib/orders.ts")
+  const reviewSteps = ["director", "procurement_order", "warehouse_receipt", "complete"]
+  let order = advanceProcurementLines(root(), ["line-1", "line-2"], "sourcing", "price_check", "specialist", "head", now)
+  assert.deepEqual(getProcurementStepProgress(order, "sourcing"), { done: 2, total: 5 })
+  assert.equal(hasProcurementLinesAtSteps(order, reviewSteps), false)
+  order = advanceProcurementLines(order, ["line-1", "line-2"], "price_check", "director", "head", "director", now, "approved")
+  assert.equal(order.currentStep, "sourcing")
+  assert.equal(hasProcurementLinesAtSteps(order, reviewSteps), true)
+  assert.deepEqual(getProcurementStepProgress(order, "price_check"), { done: 2, total: 5 })
+  order = advanceProcurementLines(order, ["line-3"], "sourcing", "price_check", "specialist", "head", now)
+  assert.deepEqual(getProcurementStepProgress(order, "sourcing"), { done: 3, total: 5 })
+})

@@ -11,7 +11,9 @@ import {
   getOrderActionView,
   getProcurementSuborderForSpecialist,
   getProcurementSpecialistIds,
+  hasProcurementLinesAtSteps,
   isOrderAssignedToProcurementSpecialist,
+  type WorkflowStep,
 } from "@/lib/orders"
 import {
   calculateQuotationTotal,
@@ -27,6 +29,7 @@ import {
 import { hasPermission, type PermissionCode } from "@/lib/rbac"
 
 const initialSuppliers: SupplierRecord[] = []
+export const directorCostReviewSteps: readonly WorkflowStep[] = ["director", "procurement_order", "warehouse_receipt", "complete"]
 
 
 type SupplierInput = Omit<SupplierRecord, "id" | "status">
@@ -386,13 +389,9 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
   const isDirector = currentUser?.roleIds.includes("role-director") ?? false
   const visibleOrderIds = new Set(
     orders
+      // Positions progress independently, so the aggregate step can still be sourcing.
       .filter((order) => can("procurement.view") || (
-        isDirector && [
-          "director",
-          "procurement_order",
-          "warehouse_receipt",
-          "complete",
-        ].includes(order.currentStep)
+        isDirector && hasProcurementLinesAtSteps(order, directorCostReviewSteps)
       ))
       .map((order) => order.id),
   )
