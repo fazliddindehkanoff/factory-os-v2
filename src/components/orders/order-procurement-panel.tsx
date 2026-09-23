@@ -29,6 +29,7 @@ import { getAssignedProcurementLineIds, getProcurementLinesAtStep, hasProcuremen
 import { orderPaymentCopy } from "./order-payment-copy"
 import { OrderPlacementSelection, type PlacementSelection } from "./order-placement-selection"
 import { countCoveredProcurementLines, getLocalDateInputValue, getRequiredProcurementQuantity, isExpectedDeliveryDateAllowed, normalizeSupplierPhone, quotationLinesCoverRequirements, type ProcurementStage, type QuotationRecord } from "@/lib/procurement"
+import { normalizeNumberDraft } from "@/lib/number-input"
 import { getLocalizedTitle } from "@/lib/settings"
 
 export function OrderProcurementPanel({ order, lang, messages, placement }: {
@@ -375,10 +376,10 @@ export function OrderProcurementPanel({ order, lang, messages, placement }: {
                   {selected ? (
                     <div className="grid min-w-0 gap-3 border-t bg-background p-3 sm:grid-cols-2">
                       <FormField label={copy.quantity} htmlFor={`order-quantity-${line.id}`}>
-                        <Input id={`order-quantity-${line.id}`} type="number" min="0.01" max={remaining} step="0.01" inputMode="decimal" value={quantities[line.id] ?? ""} onChange={(event) => setQuantities((current) => ({ ...current, [line.id]: event.target.value }))} />
+                        <Input id={`order-quantity-${line.id}`} type="number" min="0.01" max={remaining} step="0.01" inputMode="decimal" value={quantities[line.id] ?? ""} onChange={(event) => setQuantities((current) => ({ ...current, [line.id]: normalizeNumberDraft(event.target.value) }))} />
                       </FormField>
                       <FormField label={copy.unitPrice} htmlFor={`order-unit-price-${line.id}`}>
-                        <Input id={`order-unit-price-${line.id}`} type="number" min="1" step="1" inputMode="numeric" value={unitPrices[line.id] ?? ""} onChange={(event) => setUnitPrices((current) => ({ ...current, [line.id]: event.target.value }))} />
+                        <Input id={`order-unit-price-${line.id}`} type="number" min="1" step="1" inputMode="numeric" value={unitPrices[line.id] ?? ""} onChange={(event) => setUnitPrices((current) => ({ ...current, [line.id]: normalizeNumberDraft(event.target.value) }))} />
                       </FormField>
                       <FormField label={messages.expectedDate} htmlFor={`order-delivery-date-${line.id}`}>
                         <Input id={`order-delivery-date-${line.id}`} type="date" min={today} value={expectedDeliveryDates[line.id] ?? ""} onChange={(event) => setExpectedDeliveryDates((current) => ({ ...current, [line.id]: event.target.value }))} />

@@ -1,6 +1,7 @@
 "use client"
 
 import { Input } from "@/components/ui/input"
+import { NumberInput } from "@/components/ui/number-input"
 import type { Locale } from "@/lib/i18n"
 import { roundMoney } from "@/lib/order-payment"
 import type { SupplierPaymentGroup } from "@/lib/order-payment-groups"
@@ -24,10 +25,10 @@ export function SupplierPaymentFields({ group, lang, onChange }: {
       </select>
     </label>
     <label className="grid min-w-0 gap-1 text-xs">{copy.percent}
-      <Input type="number" min={0} max={100} step="0.01" required value={group.prepaidPercent} onChange={(event) => { const percent = Number(event.target.value); onChange({ prepaidPercent: percent, prepaidAmount: roundMoney(group.amount * percent / 100) }) }} />
+      <NumberInput min={0} max={100} step="0.01" required value={group.prepaidPercent} onValueChange={(percent) => { onChange({ prepaidPercent: percent, prepaidAmount: roundMoney(group.amount * percent / 100) }) }} />
     </label>
     <label className="grid min-w-0 gap-1 text-xs">{copy.advance}
-      <Input type="number" min={0} max={group.amount} step="0.01" required value={group.prepaidAmount} onChange={(event) => { const amount = Number(event.target.value); onChange({ prepaidAmount: amount, prepaidPercent: roundMoney(amount / group.amount * 100) }) }} />
+      <NumberInput min={0} max={group.amount} step="0.01" required value={group.prepaidAmount} onValueChange={(amount) => { onChange({ prepaidAmount: amount, prepaidPercent: roundMoney(amount / group.amount * 100) }) }} />
     </label>
     <label className="grid min-w-0 gap-1 text-xs">{copy.due}
       <Input type="date" required={group.prepaidAmount < group.amount} value={group.dueDate} onChange={(event) => onChange({ dueDate: event.target.value })} />

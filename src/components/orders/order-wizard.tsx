@@ -42,6 +42,7 @@ import { uxCopy } from "@/lib/ux-copy"
 import { saveOrderAttachments, orderDraftStore } from "@/lib/order-attachments"
 import { truncateLabel, type OrderAttachment, type OrderRecord } from "@/lib/orders"
 import { PRODUCT_TITLE_MAX_LENGTH } from "@/lib/product-input"
+import { normalizeNumberDraft } from "@/lib/number-input"
 import { getLocalizedTitle, type Product } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -701,7 +702,7 @@ function OrderWizardForm({
             <div className="space-y-3">
               {draft.lines.map((line, index) => {
                 return (
-                  <div key={line.id} className="grid gap-3 rounded-xl border bg-muted/25 p-4 shadow-xs lg:grid-cols-[minmax(14rem,2fr)_minmax(7rem,.7fr)_minmax(8rem,.8fr)_minmax(12rem,1.4fr)_auto] lg:items-start">
+                  <div key={line.id} className="grid gap-3 rounded-xl border bg-muted/25 p-4 shadow-xs lg:grid-cols-[minmax(0,2fr)_minmax(0,.7fr)_minmax(0,1fr)_minmax(0,1.4fr)_auto] lg:items-start">
                     <Field error={invalid(!line.productId)} label={`${index + 1}. ${messages.product}`}>
                         <SearchableSelect
                           options={data.products.map((item) => ({
@@ -723,7 +724,7 @@ function OrderWizardForm({
                         />
                     </Field>
                     <Field error={invalid(!Number.isFinite(Number(line.quantity)) || Number(line.quantity) <= 0)} label={messages.quantity} htmlFor={`quantity-${line.id}`}>
-                      <Input id={`quantity-${line.id}`} type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => updateLine(line.id, "quantity", event.target.value)} />
+                      <Input id={`quantity-${line.id}`} type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => updateLine(line.id, "quantity", normalizeNumberDraft(event.target.value))} />
                     </Field>
                     <Field error={invalid(!line.unitTypeId)} label={messages.unit}>
                       <SearchableSelect
@@ -1028,7 +1029,7 @@ function Field({ label, hint, htmlFor, error, children }: { label: string; hint?
   const child = React.isValidElement<Record<string, unknown>>(children) ? children : null
   const isControl = child && (typeof child.type !== "string" || ["input", "textarea", "select"].includes(child.type))
   return (
-    <div className="grid gap-1.5" role={isControl ? undefined : "group"} aria-labelledby={isControl ? undefined : `${id}-label`}>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5" role={isControl ? undefined : "group"} aria-labelledby={isControl ? undefined : `${id}-label`}>
       <Label id={`${id}-label`} htmlFor={isControl ? id : undefined}>{label}</Label>
       {isControl ? React.cloneElement(child, { id, "aria-invalid": Boolean(error), "aria-describedby": error ? `${id}-error` : hint ? `${id}-hint` : undefined }) : children}
       {error ? <p id={`${id}-error`} role="alert" className="text-xs text-destructive">{error}</p> : null}

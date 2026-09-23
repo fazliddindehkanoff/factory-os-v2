@@ -44,6 +44,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import {
   Table,
   TableBody,
@@ -975,11 +976,11 @@ export function OrderDetailsDialog({
             <Table className="min-w-[52rem]">
               <TableHeader className="bg-muted/50">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-12 text-center">#</TableHead>
+                  <TableHead className="w-12">#</TableHead>
                   <TableHead className="min-w-52">{messages.product}</TableHead>
-                  <TableHead className="text-right">{copy.requested}</TableHead>
-                  <TableHead className="text-right">{copy.available}</TableHead>
-                  <TableHead className="text-right">{copy.remaining}</TableHead>
+                  <TableHead>{copy.requested}</TableHead>
+                  <TableHead>{copy.available}</TableHead>
+                  <TableHead>{copy.remaining}</TableHead>
                   <TableHead>{messages.orderStatus}</TableHead>
                   <TableHead className="min-w-44">{messages.note}</TableHead>
                 </TableRow>
@@ -999,7 +1000,7 @@ export function OrderDetailsDialog({
                   const remaining = Math.max(0, line.quantity - available);
                   return (
                     <TableRow key={line.id}>
-                      <TableCell className="text-center text-muted-foreground">
+                      <TableCell className="text-muted-foreground">
                         {index + 1}
                       </TableCell>
                       <TableCell className="whitespace-normal">
@@ -1008,27 +1009,23 @@ export function OrderDetailsDialog({
                           {product?.code ?? "—"}
                         </p>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="tabular-nums">
                         {line.quantity} {unit?.code ?? ""}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="tabular-nums">
                         {isWarehouseAction ? (
-                          <div className="ml-auto flex w-32 items-center gap-2">
-                            <Input
+                          <div className="flex w-32 items-center gap-2">
+                            <NumberInput
                               aria-label={`${copy.available}: ${productTitle}`}
-                              className="h-9 text-right"
-                              type="number"
+                              className="h-9"
                               min="0"
                               max={line.quantity}
                               step="any"
                               value={quantities[line.id] ?? 0}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 setQuantities((current) => ({
                                   ...current,
-                                  [line.id]: Math.min(
-                                    line.quantity,
-                                    Math.max(0, Number(event.target.value)),
-                                  ),
+                                  [line.id]: Math.min(line.quantity, Math.max(0, value)),
                                 }))
                               }
                             />
@@ -1040,7 +1037,7 @@ export function OrderDetailsDialog({
                           <>{available} {unit?.code ?? ""}</>
                         )}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="tabular-nums">
                         {remaining} {unit?.code ?? ""}
                       </TableCell>
                       <TableCell>
