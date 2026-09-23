@@ -3,13 +3,15 @@
 import * as React from "react"
 import Link, { useLinkStatus } from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { BanknoteIcon, BellIcon, ClipboardListIcon, Clock3Icon, LoaderCircleIcon, SettingsIcon } from "lucide-react"
+import { BanknoteIcon, ClipboardListIcon, Clock3Icon, HouseIcon, LoaderCircleIcon, SettingsIcon } from "lucide-react"
 import { useAuthorization } from "@/components/auth/use-authorization"
 import { messages } from "@/lib/i18n"
 
 import type { Locale } from "@/lib/i18n"
 import type { TelegramCopy } from "@/lib/telegram-copy"
 import { cn } from "@/lib/utils"
+
+const homeLabel = { uz: "Bosh sahifa", ru: "Главная", tr: "Ana sayfa" } as const
 
 export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: TelegramCopy }) {
   const { canViewFinance } = useAuthorization()
@@ -19,17 +21,17 @@ export function TelegramBottomNav({ lang, copy }: { lang: Locale; copy: Telegram
   const returnScope = new URLSearchParams(searchParams.get("return") ?? "").get("scope")
   const waitingContext = searchParams.get("scope") === "waiting" || searchParams.get("from") === "waiting" || returnScope === "waiting"
   const items = [
+    { href: `/${lang}/telegram/home`, label: homeLabel[lang], icon: HouseIcon, active: pathname.endsWith("/telegram/home") },
     { href: `/${lang}/telegram/orders`, label: copy.orders, icon: ClipboardListIcon, active: pathname.includes("/orders") && !waitingContext },
     { href: `/${lang}/telegram/orders?scope=waiting`, label: copy.waiting, icon: Clock3Icon, active: pathname.includes("/orders") && waitingContext },
     ...(canViewFinance ? [{ href: `/${lang}/telegram/finance`, label: messages[lang].finance, icon: BanknoteIcon, active: pathname.includes("/finance") }] : []),
-    { href: `/${lang}/telegram/notifications`, label: copy.notifications, icon: BellIcon, active: pathname.includes("/notifications") },
     { href: `/${lang}/telegram/settings`, label: copy.settings, icon: SettingsIcon, active: pathname.includes("/settings") },
   ]
 
   React.useEffect(() => {
     router.prefetch(`/${lang}/telegram/orders`)
     router.prefetch(`/${lang}/telegram/orders?scope=waiting`)
-    router.prefetch(`/${lang}/telegram/notifications`)
+    router.prefetch(`/${lang}/telegram/home`)
     router.prefetch(`/${lang}/telegram/settings`)
   }, [lang, router])
 

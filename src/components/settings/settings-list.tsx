@@ -158,6 +158,7 @@ export function SettingsList({
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={pageIds} strategy={verticalListSortingStrategy}>
+          <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
           <Table>
             <TableHeader>
               <TableRow>
@@ -202,6 +203,7 @@ export function SettingsList({
               ))}
             </TableBody>
           </Table>
+          </div>
         </SortableContext>
       </DndContext>
 

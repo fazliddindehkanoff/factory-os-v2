@@ -7,7 +7,8 @@ import { TelegramOrderCard } from "@/components/telegram/telegram-order-card"
 import {
   TelegramOrdersFilters,
 } from "@/components/telegram/telegram-orders-filters"
-import { TelegramOrdersHero } from "@/components/telegram/telegram-orders-hero"
+import { TelegramOrdersHero, type TelegramHomeShortcut } from "@/components/telegram/telegram-orders-hero"
+import { telegramLateDays } from "@/components/telegram/telegram-order-card"
 import { TelegramShell } from "@/components/telegram/telegram-shell"
 import { requireTelegramSession } from "@/lib/auth/session"
 import { isLocale } from "@/lib/i18n"
@@ -28,14 +29,20 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
   if (!isLocale(lang)) notFound()
   const session = await requireTelegramSession(lang, `/${lang}/telegram/orders`)
   const query = await searchParams
-  const waitingOnly = queryValue(query.scope) === "waiting"
+  const scope = queryValue(query.scope)
+  const waitingOnly = scope === "waiting"
+  const activeOnly = scope === "active"
+  const lateOnly = scope === "late"
   const [allOrders, profile, copy] = await Promise.all([
     getTelegramOrders(session.userId, lang),
     getTelegramUserProfile(session.userId, lang),
     Promise.resolve(telegramCopy[lang]),
   ])
-  const waitingCount = allOrders.filter((order) => order.waitingForMe).length
-  const urgentCount = allOrders.filter((order) => order.urgency === "urgent" || order.urgency === "critical").length
+  const isOpen = (order: (typeof allOrders)[number]) => order.currentStep !== "complete" && !["approved", "fulfilled", "rejected", "cancelled", "draft"].includes(order.status)
+  const openOrders = allOrders.filter(isOpen)
+  const lateCount = allOrders.filter((order) => telegramLateDays(order) > 0).length
+  const urgentCount = openOrders.filter((order) => order.urgency === "urgent" || order.urgency === "critical").length
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", hourCycle: "h23" }).format(new Date()))
   const localeTag = lang === "ru" ? "ru-RU" : lang === "tr" ? "tr-TR" : "uz-UZ"
   const departments = [...new Map(allOrders.flatMap((order) => order.departmentOptions.map((option) => [option.value, option] as const))).values()]
   const warehouses = [...new Map(allOrders.map((order) => [order.warehouseId, { value: order.warehouseId, label: order.warehouse }])).values()]
@@ -53,20 +60,25 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
     warehouse: warehouses.some((item) => item.value === rawWarehouse) ? rawWarehouse : "",
   }
   const activeFilterCount = Object.values(filters).filter(Boolean).length
-  const orders = allOrders.filter((order) => matchesTelegramOrderFilters(order, filters, waitingOnly, localeTag))
+  const orders = allOrders.filter((order) => matchesTelegramOrderFilters(order, filters, waitingOnly, localeTag) &&
+    (!activeOnly || isOpen(order)) && (!lateOnly || telegramLateDays(order) > 0))
   const returnParams = new URLSearchParams()
-  if (waitingOnly) returnParams.set("scope", "waiting")
+  if (waitingOnly || activeOnly || lateOnly) returnParams.set("scope", scope)
   for (const [key, value] of Object.entries(filters)) {
     if (value) returnParams.set(key, value)
   }
   const returnQuery = returnParams.toString()
-  const activeShortcut = waitingOnly
+  const activeShortcut: TelegramHomeShortcut = waitingOnly
     ? "waiting"
-    : filters.urgency === "urgent-group" && activeFilterCount === 1
-      ? "urgent"
-      : activeFilterCount === 0
-        ? "all"
-        : null
+    : activeOnly && activeFilterCount === 0
+      ? "active"
+      : lateOnly && activeFilterCount === 0
+        ? "late"
+        : filters.urgency === "urgent-group" && activeFilterCount === 1 && !scope
+          ? "urgent"
+          : activeFilterCount === 0 && !scope
+            ? "all"
+            : null
   const groups = orders.reduce<Array<{ key: string; label: string; orders: typeof orders }>>((result, order) => {
     const date = new Date(order.createdAt)
     const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
@@ -92,10 +104,12 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
           lang={lang}
           userName={profile?.fullName ?? session.fullName}
           roleNames={profile?.roles ?? []}
-          totalCount={allOrders.length}
-          waitingCount={waitingCount}
+          hour={hour}
+          activeCount={openOrders.length}
+          lateCount={lateCount}
           urgentCount={urgentCount}
           activeShortcut={activeShortcut}
+          compact
         />
       )}
     >
@@ -108,6 +122,7 @@ export default async function Page({ params, searchParams }: PageProps<"/[lang]/
         copy={copy}
         values={filters}
         waitingOnly={waitingOnly}
+        scope={waitingOnly || activeOnly || lateOnly ? scope : ""}
         departments={departments}
         warehouses={warehouses}
       />

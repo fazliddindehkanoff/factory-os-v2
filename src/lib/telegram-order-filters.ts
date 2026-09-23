@@ -11,7 +11,7 @@ export type TelegramOrderFilterValues = {
 
 export function matchesTelegramOrderFilters(order: TelegramOrderSummary, values: TelegramOrderFilterValues, waitingOnly: boolean, locale: string) {
   const query = values.q.trim().toLocaleLowerCase(locale)
-  const searchable = [order.number, order.applicant, order.department, order.warehouse, order.purpose]
+  const searchable = [order.number, order.applicant, order.department, order.warehouse, order.purpose, order.productSummary]
     .join(" ")
     .toLocaleLowerCase(locale)
   return (!waitingOnly || order.waitingForMe)

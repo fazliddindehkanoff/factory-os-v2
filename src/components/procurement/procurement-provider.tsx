@@ -90,8 +90,10 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
     if (!currentUserId) return
     let cancelled = false
     let loading = false
+    let loadedOnce = false
     async function refresh() {
-      if (loading || document.visibilityState === "hidden") return
+      // Background tabs still need the first load; only periodic refreshes pause while hidden.
+      if (loading || (loadedOnce && document.visibilityState === "hidden")) return
       loading = true
       const revision = quotationRevision.current
       try {
@@ -105,7 +107,7 @@ export function ProcurementProvider({ children }: { children: React.ReactNode })
       setSuppliers(serverSuppliers)
       if (revision === quotationRevision.current) updateQuotations(serverQuotations)
       setStoredCases((current) => mergeRecords(current, serverCases))
-      } finally { loading = false; if (!cancelled) setStorageReady(true) }
+      } finally { loading = false; loadedOnce = true; if (!cancelled) setStorageReady(true) }
     }
     const refreshSafely = () => { void refresh().catch(() => { if (!cancelled) setSyncError(true) }) }
     refreshSafely()

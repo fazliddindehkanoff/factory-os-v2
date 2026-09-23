@@ -14,6 +14,7 @@ export function TelegramOrdersFilters({
   copy,
   values,
   waitingOnly,
+  scope = waitingOnly ? "waiting" : "",
   departments,
   warehouses,
 }: {
@@ -21,13 +22,15 @@ export function TelegramOrdersFilters({
   copy: TelegramCopy
   values: TelegramOrderFilterValues
   waitingOnly: boolean
+  /** Home shortcut scope (waiting, active or late) kept across filter changes. */
+  scope?: string
   departments: Array<{ value: string; label: string }>
   warehouses: Array<{ value: string; label: string }>
 }) {
   const pathname = usePathname()
   const router = useRouter()
   const activeCount = Object.values(values).filter(Boolean).length
-  const clearHref = waitingOnly ? `/${lang}/telegram/orders?scope=waiting#orders` : `/${lang}/telegram/orders#orders`
+  const clearHref = scope ? `/${lang}/telegram/orders?scope=${scope}#orders` : `/${lang}/telegram/orders#orders`
 
   function applyFilters(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -55,7 +58,7 @@ export function TelegramOrdersFilters({
       </summary>
 
       <form onSubmit={applyFilters} className="tg-divider grid gap-3 border-t p-3.5">
-        {waitingOnly ? <input type="hidden" name="scope" value="waiting" /> : null}
+        {scope ? <input type="hidden" name="scope" value={scope} /> : null}
         <label className="grid gap-1.5 text-[11px] font-bold text-[var(--tg-text-secondary)]">
           {copy.searchOrders}
           <span className="relative">

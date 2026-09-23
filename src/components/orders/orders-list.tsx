@@ -8,15 +8,16 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   ChartNoAxesColumnIncreasingIcon,
+  ClipboardListIcon,
   CheckIcon,
   CircleCheckBigIcon,
   Clock3Icon,
   DownloadIcon,
-  FilterIcon,
   ListChecksIcon,
   LoaderCircleIcon,
   PlusIcon,
   SearchIcon,
+  SlidersHorizontalIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -28,6 +29,10 @@ import { OrderProcurementPanel } from "@/components/orders/order-procurement-pan
 import { useOrders } from "@/components/orders/orders-provider";
 import { OrderFamilyLinks } from "@/components/orders/order-family-links";
 import { OrderPaymentDialog, OrderPaymentSummary } from "@/components/orders/order-payment-dialog";
+import { LateBadge, OrderProgress } from "@/components/orders/order-progress";
+import { PageHeader, StatTile, Surface } from "@/components/page-header";
+import { cn } from "@/lib/utils";
+import { dashboardCopy } from "@/components/dashboard/dashboard-copy";
 import { orderPaymentCopy } from "@/components/orders/order-payment-copy";
 import { useProcurement } from "@/components/procurement/procurement-provider";
 import { approvedPaymentLines } from "@/lib/order-payment";
@@ -103,8 +108,10 @@ export function OrdersList({
     approveOrder,
     rejectOrder,
     submitWarehouseReport,
+    lastUpdated,
   } = useOrders();
   const orders = allOrders.filter(isOperationalOrder);
+  const now = lastUpdated ? Date.parse(lastUpdated) : 0;
   const { data } = useSettings();
   const { can, canViewOrders, currentUser } = useAuthorization();
   const searchParams = useSearchParams();
@@ -184,36 +191,22 @@ export function OrdersList({
     pageIds.length > 0 && pageIds.every((id) => validSelectedIds.has(id));
   const partiallySelected =
     pageIds.some((id) => validSelectedIds.has(id)) && !allPageSelected;
-  const hasFilters = Object.values(filters).some(Boolean);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const hasFilters = activeFilterCount > 0;
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
   const storedDetailOrder = allOrders.find((order) => order.id === detailOrderId);
   const detailOrder = storedDetailOrder ? getOrderActionView(storedDetailOrder, currentUser?.id) : undefined;
+  const waitingCount = orders.filter(waitingForCurrentUser).length;
   const statistics = [
-    {
-      label: messages.totalOrders,
-      value: orders.length,
-      icon: ListChecksIcon,
-      iconClassName: "bg-primary/10 text-primary",
-    },
-    {
-      label: copy.waitingForMe,
-      value: orders.filter(waitingForCurrentUser).length,
-      icon: Clock3Icon,
-      iconClassName: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-    },
+    { label: messages.totalOrders, value: orders.length, icon: ListChecksIcon, tone: "primary" as const, href: `/${lang}/orders`, active: !waitingOnly },
+    { label: copy.waitingForMe, value: waitingCount, icon: Clock3Icon, tone: "amber" as const, href: `/${lang}/orders?view=waiting`, active: waitingOnly },
     {
       label: copy.inProgress,
-      value: orders.filter((order) =>
-        ["supervisor_review", "warehouse_check", "in_progress"].includes(order.status),
-      ).length,
+      value: orders.filter((order) => ["supervisor_review", "warehouse_check", "in_progress"].includes(order.status)).length,
       icon: ChartNoAxesColumnIncreasingIcon,
-      iconClassName: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+      tone: "sky" as const,
     },
-    {
-      label: copy.completedOrders,
-      value: orders.filter(isOrderSuccessfullyClosed).length,
-      icon: CircleCheckBigIcon,
-      iconClassName: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-    },
+    { label: copy.completedOrders, value: orders.filter(isOrderSuccessfullyClosed).length, icon: CircleCheckBigIcon, tone: "emerald" as const },
   ];
 
   React.useEffect(() => {
@@ -269,104 +262,72 @@ export function OrdersList({
   }
 
   return (
-    <div className="flex min-w-0 w-full flex-1 flex-col gap-4 px-4 pb-8 md:px-6">
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-1 flex-col gap-5 px-4 pb-10 md:px-6">
       {returnPath ? <Link href={returnPath} className="text-sm underline">{uxCopy[lang].back}</Link> : null}
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {messages.orderList}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {messages.orderListDescription}
-          </p>
-        </div>
-        {canCreate ? (
-          <Link
-            href={`/${lang}/orders/new`}
-            className={buttonVariants({ className: "w-full sm:w-auto" })}
-          >
+      <PageHeader
+        icon={ClipboardListIcon}
+        title={messages.orderList}
+        description={messages.orderListDescription}
+        actions={canCreate ? (
+          <Link href={`/${lang}/orders/new`} className={buttonVariants({ size: "lg", className: "w-full shadow-sm shadow-primary/20 sm:w-auto" })}>
             <PlusIcon />
             {messages.newOrder}
           </Link>
         ) : null}
-      </div>
+      />
 
-      <section
-        aria-label={copy.orderStatistics}
-        className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        {statistics.map((statistic) => {
-          const Icon = statistic.icon;
-          return (
-            <article
-              key={statistic.label}
-              className="flex min-w-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-xs"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-xs font-medium text-muted-foreground">
-                  {statistic.label}
-                </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums">
-                  {statistic.value}
-                </p>
-              </div>
-              <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${statistic.iconClassName}`}>
-                <Icon className="size-4.5" aria-hidden="true" />
-              </span>
-            </article>
-          );
-        })}
+      <section aria-label={copy.orderStatistics} className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {statistics.map((statistic) => <StatTile key={statistic.label} {...statistic} />)}
       </section>
 
-      <nav
-        aria-label={copy.queueLabel}
-        className="flex w-fit rounded-lg border bg-background p-1"
-      >
-        <Link
-          href={`/${lang}/orders`}
-          aria-current={!waitingOnly ? "page" : undefined}
-          className="rounded-md px-3 py-1.5 text-sm font-medium transition-colors hover:bg-primary/10 aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
-        >
-          {copy.allOrders}
-        </Link>
-        <Link
-          href={`/${lang}/orders?view=waiting`}
-          aria-current={waitingOnly ? "page" : undefined}
-          className="rounded-md px-3 py-1.5 text-sm font-medium transition-colors hover:bg-primary/10 aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
-        >
-          {copy.waitingForMe} (
-          {
-            orders.filter(waitingForCurrentUser)
-              .length
-          }
-          )
-        </Link>
-      </nav>
-
-      <div className="relative max-w-lg">
-        <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setPage(1);
-          }}
-          aria-label={messages.searchOrders}
-          placeholder={messages.searchOrders}
-          className="pl-8"
-        />
-      </div>
-
-      <div className="space-y-2 rounded-xl bg-muted/45 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <FilterIcon className="size-4" />
-            {messages.filters}
+      <Surface className="p-3 md:p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <nav aria-label={copy.queueLabel} className="flex w-fit shrink-0 rounded-xl border bg-muted/50 p-1">
+            <Link
+              href={`/${lang}/orders`}
+              aria-current={!waitingOnly ? "page" : undefined}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-card aria-[current=page]:text-foreground aria-[current=page]:shadow-sm"
+            >
+              {copy.allOrders}
+            </Link>
+            <Link
+              href={`/${lang}/orders?view=waiting`}
+              aria-current={waitingOnly ? "page" : undefined}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground aria-[current=page]:bg-card aria-[current=page]:text-foreground aria-[current=page]:shadow-sm"
+            >
+              {copy.waitingForMe}
+              <span className="rounded-full bg-amber-500/15 px-1.5 font-mono text-xs text-amber-800">{waitingCount}</span>
+            </Link>
+          </nav>
+          <div className="relative min-w-0 flex-1">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(1);
+              }}
+              aria-label={messages.searchOrders}
+              placeholder={messages.searchOrders}
+              className="h-10 rounded-xl pl-9"
+            />
           </div>
+          <Button
+            variant="outline"
+            className="h-10 shrink-0 rounded-xl lg:hidden"
+            aria-expanded={filtersOpen}
+            aria-controls="order-filters"
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            <SlidersHorizontalIcon />
+            {messages.filters}
+            {activeFilterCount ? <span className="rounded-full bg-primary px-1.5 font-mono text-xs text-primary-foreground">{activeFilterCount}</span> : null}
+          </Button>
           {hasFilters ? (
             <Button
               variant="ghost"
               size="sm"
+              className="shrink-0 self-start lg:self-auto"
               onClick={() => {
                 setFilters(initialFilters);
                 setPage(1);
@@ -377,7 +338,7 @@ export function OrdersList({
             </Button>
           ) : null}
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <div id="order-filters" className={cn("mt-3 gap-2 border-t pt-3 sm:grid-cols-2 lg:grid lg:grid-cols-5", filtersOpen ? "grid" : "hidden")}>
           <OrderFilter
             label={messages.orderType}
             value={filters.type}
@@ -423,66 +384,87 @@ export function OrdersList({
             }))}
           />
         </div>
-      </div>
+      </Surface>
 
-      {validSelectedIds.size === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {messages.selectionShortcut}
-        </p>
-      ) : null}
+      <Surface className="overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <p className="text-sm font-medium">
+            {filteredOrders.length} <span className="font-normal text-muted-foreground">{messages.orderList.toLocaleLowerCase()}</span>
+          </p>
+          {validSelectedIds.size === 0 ? (
+            <p className="hidden text-xs text-muted-foreground md:block">{messages.selectionShortcut}</p>
+          ) : null}
+        </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-10">
-              <Checkbox
-                checked={allPageSelected}
-                indeterminate={partiallySelected}
-                onCheckedChange={(checked) => togglePage(checked === true)}
-                aria-label={messages.selectAllPage}
-              />
-            </TableHead>
-            <TableHead>{messages.orderNumber}</TableHead>
-            <TableHead>{messages.orderType}</TableHead>
-            <TableHead>{messages.applicant}</TableHead>
-            <TableHead>{messages.departmentsField}</TableHead>
-            <TableHead>{messages.warehouse}</TableHead>
-            <TableHead>{messages.positionsCount}</TableHead>
-            <TableHead>{messages.expectedDate}</TableHead>
-            <TableHead>{messages.urgency}</TableHead>
-            <TableHead>{messages.orderStatus}</TableHead>
-            <TableHead>{messages.createdAt}</TableHead>
-            <TableHead><span className="sr-only">{lang === "ru" ? "Действия" : lang === "tr" ? "İşlemler" : "Amallar"}</span></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
+        <ul className="divide-y md:hidden">
           {pageOrders.length === 0 ? (
-            <TableRow>
-              <TableCell
-                colSpan={12}
-                className="h-28 text-center text-muted-foreground"
-              >
-                {waitingOnly ? copy.noWaiting : messages.noRecords}
-              </TableCell>
-            </TableRow>
-          ) : (
-            pageOrders.map((order) => (
-              <OrderRow
-                key={order.id}
-                order={order}
-                lang={lang}
-                messages={messages}
-                selected={validSelectedIds.has(order.id)}
-                onToggle={toggleOrder}
-                onOpen={() => setDetailOrderId(order.id)}
-                onPlace={() => setDetailOrderId(order.id, "procurement")}
-                data={data}
-                currentUserId={currentUser?.id}
-              />
-            ))
-          )}
-        </TableBody>
-      </Table>
+            <li className="px-4 py-12 text-center text-sm text-muted-foreground">{waitingOnly ? copy.noWaiting : messages.noRecords}</li>
+          ) : pageOrders.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              lang={lang}
+              messages={messages}
+              data={data}
+              now={now}
+              waiting={waitingForCurrentUser(order)}
+              currentUserId={currentUser?.id}
+              onOpen={() => setDetailOrderId(order.id)}
+              onPlace={() => setDetailOrderId(order.id, "procurement")}
+            />
+          ))}
+        </ul>
+
+        <div className="hidden md:block">
+          <Table>
+            <TableHeader className="bg-muted/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-10 pl-4">
+                  <Checkbox
+                    checked={allPageSelected}
+                    indeterminate={partiallySelected}
+                    onCheckedChange={(checked) => togglePage(checked === true)}
+                    aria-label={messages.selectAllPage}
+                  />
+                </TableHead>
+                <TableHead>{messages.orderNumber}</TableHead>
+                <TableHead>{messages.applicant}</TableHead>
+                <TableHead className="w-48">{workflowCopy(lang).workflowProgress}</TableHead>
+                <TableHead className="w-28 whitespace-normal leading-4">{messages.expectedDate}</TableHead>
+                <TableHead className="w-28 whitespace-normal leading-4">{messages.urgency}</TableHead>
+                <TableHead>{messages.orderStatus}</TableHead>
+                <TableHead><span className="sr-only">{lang === "ru" ? "Действия" : lang === "tr" ? "İşlemler" : "Amallar"}</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pageOrders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
+                    {waitingOnly ? copy.noWaiting : messages.noRecords}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                pageOrders.map((order) => (
+                  <OrderRow
+                    key={order.id}
+                    order={order}
+                    lang={lang}
+                    messages={messages}
+                    selected={validSelectedIds.has(order.id)}
+                    onToggle={toggleOrder}
+                    onOpen={() => setDetailOrderId(order.id)}
+                    onPlace={() => setDetailOrderId(order.id, "procurement")}
+                    data={data}
+                    now={now}
+                    waiting={waitingForCurrentUser(order)}
+                    currentUserId={currentUser?.id}
+                  />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Surface>
 
       {validSelectedIds.size > 0 ? (
         <div
@@ -633,6 +615,38 @@ export function OrdersList({
   );
 }
 
+function useOrderRowModel(order: OrderRecord, data: ReturnType<typeof useSettings>["data"], lang: Locale, currentUserId?: string) {
+  const { can } = useAuthorization();
+  const canPlace = Boolean(currentUserId && can("procurement.quote") &&
+    getProcurementLinesAtStep(order, "procurement_order", currentUserId).length &&
+    isOrderAssignedToProcurementSpecialist(order, currentUserId));
+  const applicant = data.users.find((user) => user.id === order.applicantId);
+  const warehouse = data.warehouses.find((item) => item.id === order.warehouseId);
+  const departments = order.departmentIds
+    .map((id) => data.departments.find((item) => item.id === id))
+    .filter(Boolean)
+    .map((item) => (item ? getLocalizedTitle(item, lang) : ""))
+    .join(", ");
+  const fulfilledLines = order.lines.filter((line) => line.fulfillmentStatus === "fulfilled_from_stock").length;
+  const visibleLineIds = currentUserId && data.users.find((user) => user.id === currentUserId)?.roleIds.includes("role-procurement_manager")
+    ? new Set(getAssignedProcurementLineIds(order, currentUserId))
+    : undefined;
+  const lines = visibleLineIds ? order.lines.filter((line) => visibleLineIds.has(line.id)) : order.lines;
+  const firstProduct = data.products.find((product) => product.id === lines[0]?.productId);
+  const productSummary = firstProduct
+    ? `${getLocalizedTitle(firstProduct, lang)}${lines.length > 1 ? ` +${lines.length - 1}` : ""}`
+    : "";
+  const displayNumber = getProcurementSuborderForSpecialist(order, currentUserId)?.number ?? order.number;
+  return { canPlace, applicant, warehouse, departments, fulfilledLines, lineCount: lines.length, productSummary, displayNumber };
+}
+
+const urgencyDot: Record<UrgencyLevel, string> = {
+  critical: "bg-red-600",
+  urgent: "bg-orange-500",
+  high: "bg-amber-400",
+  normal: "bg-slate-300",
+};
+
 function OrderRow({
   order,
   lang,
@@ -642,6 +656,8 @@ function OrderRow({
   onOpen,
   onPlace,
   data,
+  now,
+  waiting,
   currentUserId,
 }: {
   order: OrderRecord;
@@ -652,34 +668,17 @@ function OrderRow({
   onOpen: () => void;
   onPlace: () => void;
   data: ReturnType<typeof useSettings>["data"];
+  now: number;
+  waiting: boolean;
   currentUserId?: string;
 }) {
-  const { can } = useAuthorization();
-  const canPlace = Boolean(currentUserId && can("procurement.quote") &&
-    getProcurementLinesAtStep(order, "procurement_order", currentUserId).length &&
-    isOrderAssignedToProcurementSpecialist(order, currentUserId));
-  const applicant = data.users.find((user) => user.id === order.applicantId);
-  const warehouse = data.warehouses.find(
-    (item) => item.id === order.warehouseId,
-  );
-  const departments = order.departmentIds
-    .map((id) => data.departments.find((item) => item.id === id))
-    .filter(Boolean)
-    .map((item) => (item ? getLocalizedTitle(item, lang) : ""))
-    .join(", ");
-  const fulfilledLines = order.lines.filter(
-    (line) => line.fulfillmentStatus === "fulfilled_from_stock",
-  ).length;
-  const displayedLineCount = currentUserId && data.users.find((user) => user.id === currentUserId)
-    ?.roleIds.includes("role-procurement_manager")
-    ? getAssignedProcurementLineIds(order, currentUserId).length
-    : order.lines.length;
-  const displayNumber = getProcurementSuborderForSpecialist(order, currentUserId)?.number ?? order.number;
+  const model = useOrderRowModel(order, data, lang, currentUserId);
+  const typeLabel = order.type === "material" ? messages.material : messages.service;
   return (
     <TableRow
       data-state={selected ? "selected" : undefined}
       tabIndex={0}
-      aria-label={`${workflowCopy(lang).openDetails}: ${displayNumber}`}
+      aria-label={`${workflowCopy(lang).openDetails}: ${model.displayNumber}`}
       onClick={onOpen}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -687,52 +686,97 @@ function OrderRow({
           onOpen();
         }
       }}
-      className="cursor-pointer transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className={cn(
+        "group cursor-pointer transition-colors hover:bg-primary/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        waiting && "bg-amber-50/60 shadow-[inset_3px_0_0_var(--color-amber-500)] hover:bg-amber-50",
+      )}
     >
-      <TableCell
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-      >
+      <TableCell className="pl-4" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
         <Checkbox
           checked={selected}
           onCheckedChange={(checked) => onToggle(order.id, checked === true)}
-          aria-label={`${messages.selectOption}: ${displayNumber}`}
+          aria-label={`${messages.selectOption}: ${model.displayNumber}`}
         />
       </TableCell>
-      <TableCell className="font-mono font-medium">{displayNumber}</TableCell>
-      <TableCell>
-        {order.type === "material" ? messages.material : messages.service}
+      <TableCell className="max-w-60 py-3">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-semibold group-hover:text-primary">{model.displayNumber}</span>
+          {waiting ? <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">{workflowCopy(lang).waitingForMe}</span> : null}
+        </div>
+        {model.productSummary ? <p className="mt-0.5 truncate text-sm">{model.productSummary}</p> : null}
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          <span>{typeLabel}</span>·<span>{model.lineCount} {dashboardCopy[lang].positions}</span>
+          {model.fulfilledLines ? <>·<span className="text-primary">{model.fulfilledLines} {workflowCopy(lang).fulfilledShort}</span></> : null}
+        </p>
       </TableCell>
-      <TableCell>{applicant?.fullName ?? "—"}</TableCell>
-      <TableCell>{departments || "—"}</TableCell>
-      <TableCell>
-        {warehouse ? getLocalizedTitle(warehouse, lang) : "—"}
+      <TableCell className="max-w-48">
+        <p className="truncate text-sm">{model.applicant?.fullName ?? "—"}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{[model.departments, model.warehouse ? getLocalizedTitle(model.warehouse, lang) : ""].filter(Boolean).join(" · ") || "—"}</p>
+      </TableCell>
+      <TableCell className="w-48 min-w-44">
+        <OrderProgress order={order} lang={lang} now={now} />
       </TableCell>
       <TableCell>
         <div className="flex flex-col gap-1">
-          <span>{displayedLineCount}</span>
-          {fulfilledLines ? (
-            <Badge
-              variant="outline"
-              className="w-fit border-primary/30 bg-primary/5 text-[10px] text-primary"
-            >
-              {fulfilledLines} {workflowCopy(lang).fulfilledShort}
-            </Badge>
-          ) : null}
+          <span className="font-mono text-sm tabular-nums">{formatDate(order.expectedDate)}</span>
+          <LateBadge order={order} lang={lang} now={now} />
         </div>
       </TableCell>
-      <TableCell>{formatDate(order.expectedDate)}</TableCell>
       <TableCell>
-        <UrgencyBadge urgency={order.urgency} messages={messages} />
+        <span className="inline-flex items-center gap-2 text-sm">
+          <span className={cn("size-2 rounded-full", urgencyDot[order.urgency])} aria-hidden="true" />
+          {urgencyLabel(order.urgency, messages)}
+        </span>
       </TableCell>
       <TableCell>
         <StatusBadge status={order.status} messages={messages} lang={lang} />
       </TableCell>
-      <TableCell>{new Intl.DateTimeFormat(lang, { timeZone: "Asia/Tashkent", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(order.createdAt))}</TableCell>
-      <TableCell onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
-        {canPlace ? <Button size="sm" onClick={onPlace}>{orderPaymentCopy[lang].shortTitle}</Button> : null}
+      <TableCell className="pr-4 text-right" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+        {model.canPlace ? <Button size="sm" onClick={onPlace}>{orderPaymentCopy[lang].shortTitle}</Button> : null}
       </TableCell>
     </TableRow>
+  );
+}
+
+function OrderCard({ order, lang, messages, data, now, waiting, currentUserId, onOpen, onPlace }: {
+  order: OrderRecord;
+  lang: Locale;
+  messages: Messages;
+  data: ReturnType<typeof useSettings>["data"];
+  now: number;
+  waiting: boolean;
+  currentUserId?: string;
+  onOpen: () => void;
+  onPlace: () => void;
+}) {
+  const model = useOrderRowModel(order, data, lang, currentUserId);
+  return (
+    <li className={cn("relative", waiting && "bg-amber-50/60")}>
+      {waiting ? <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1 bg-amber-500" /> : null}
+      <button type="button" onClick={onOpen} className="block w-full px-4 py-3.5 text-left focus-visible:bg-muted/60 focus-visible:outline-none">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className={cn("size-2 shrink-0 rounded-full", urgencyDot[order.urgency])} aria-hidden="true" />
+              <span className="truncate font-mono text-sm font-semibold">{model.displayNumber}</span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-sm font-medium">{model.productSummary || model.applicant?.fullName || "—"}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{model.applicant?.fullName ?? "—"} · {model.lineCount} {dashboardCopy[lang].positions}</p>
+          </div>
+          <StatusBadge status={order.status} messages={messages} lang={lang} />
+        </div>
+        <OrderProgress order={order} lang={lang} now={now} className="mt-3" />
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="font-mono tabular-nums">{messages.expectedDate}: {formatDate(order.expectedDate)}</span>
+          <LateBadge order={order} lang={lang} now={now} />
+        </div>
+      </button>
+      {model.canPlace ? (
+        <div className="px-4 pb-3.5">
+          <Button size="sm" className="w-full" onClick={onPlace}>{orderPaymentCopy[lang].shortTitle}</Button>
+        </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -1485,16 +1529,23 @@ function StatusBadge({
     rejected: messages.statusRejected,
     draft: messages.statusDraft,
   };
-  const variant =
-    status === "rejected"
-      ? "destructive"
-      : status === "approved" || status === "fulfilled"
-        ? "default"
-        : status === "draft"
-          ? "outline"
-          : "secondary";
-  return <Badge variant={variant}>{labels[status]}</Badge>;
+  return (
+    <span className={cn("inline-flex w-fit shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium", statusTone[status])}>
+      <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
+      {labels[status]}
+    </span>
+  );
 }
+
+const statusTone: Record<OrderStatus, string> = {
+  supervisor_review: "bg-amber-50 text-amber-800",
+  warehouse_check: "bg-amber-50 text-amber-800",
+  in_progress: "bg-sky-50 text-sky-800",
+  fulfilled: "bg-emerald-50 text-emerald-800",
+  approved: "bg-emerald-50 text-emerald-800",
+  rejected: "bg-red-50 text-red-700",
+  draft: "bg-muted text-muted-foreground",
+};
 function UrgencyBadge({
   urgency,
   messages,
@@ -1502,19 +1553,22 @@ function UrgencyBadge({
   urgency: UrgencyLevel;
   messages: Messages;
 }) {
-  const labels = {
-    normal: messages.urgencyNormal,
-    high: messages.urgencyHigh,
-    urgent: messages.urgencyUrgent,
-    critical: messages.urgencyCritical,
-  };
   const variants = {
     normal: "secondary",
     high: "outline",
     urgent: "default",
     critical: "destructive",
   } as const;
-  return <Badge variant={variants[urgency]}>{labels[urgency]}</Badge>;
+  return <Badge variant={variants[urgency]}>{urgencyLabel(urgency, messages)}</Badge>;
+}
+
+function urgencyLabel(urgency: UrgencyLevel, messages: Messages) {
+  return {
+    normal: messages.urgencyNormal,
+    high: messages.urgencyHigh,
+    urgent: messages.urgencyUrgent,
+    critical: messages.urgencyCritical,
+  }[urgency];
 }
 
 

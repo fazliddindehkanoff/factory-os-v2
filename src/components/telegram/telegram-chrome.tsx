@@ -3,11 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { RefreshCwIcon, BellIcon, MoonIcon, SunIcon } from "lucide-react"
+import { BellIcon, MoonIcon, SunIcon } from "lucide-react"
 
 import { OverlayTheme } from "@/components/ui/overlay-layer"
 import { TelegramBottomNav } from "@/components/telegram/telegram-bottom-nav"
-import { uxCopy } from "@/lib/ux-copy"
 import { SyncStatus } from "@/components/sync-status"
 import type { Locale } from "@/lib/i18n"
 import type { TelegramCopy } from "@/lib/telegram-copy"
@@ -15,7 +14,6 @@ import type { TelegramCopy } from "@/lib/telegram-copy"
 type TelegramTheme = "light" | "dark"
 
 export function TelegramChrome({
-  refreshedAt,
   lang,
   copy,
   title,
@@ -24,7 +22,6 @@ export function TelegramChrome({
   hero,
   children,
 }: {
-  refreshedAt: string
   lang: Locale
   copy: TelegramCopy
   title: string
@@ -55,7 +52,6 @@ export function TelegramChrome({
       app.setBackgroundColor?.(theme === "dark" ? "#101827" : "#f4f6f9")
     }
   }, [theme])
-  const [refreshing, startRefresh] = React.useTransition()
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark"
     setTheme(next)
@@ -126,7 +122,6 @@ export function TelegramChrome({
         </header>
         {hero}
         <main id="telegram-main" className="flex-1 px-4 pb-28 pt-4">
-          <div className="mb-3 flex items-center justify-between gap-2"><time className="text-xs text-[var(--tg-text-muted)]" dateTime={refreshedAt}>{uxCopy[lang].updated}: {new Date(refreshedAt).toLocaleTimeString(lang, { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" })}</time><button type="button" disabled={refreshing} className="flex min-h-11 items-center gap-2 px-3 text-sm text-[var(--tg-text-secondary)]" onClick={() => { window.dispatchEvent(new Event("factory-os:orders-changed")); startRefresh(() => router.refresh()) }}><RefreshCwIcon className={refreshing ? "size-4 animate-spin motion-reduce:animate-none" : "size-4"} />{uxCopy[lang].refresh}</button></div>
           <SyncStatus lang={lang} />
           {children}
         </main>

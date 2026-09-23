@@ -37,7 +37,7 @@ const copy = {
 export function TelegramBootstrap({ lang }: { lang: Locale }) {
   const [failed, setFailed] = React.useState("")
   const [attempt, setAttempt] = React.useState(0)
-  const [next, setNext] = React.useState(`/${lang}/telegram/orders`)
+  const [next, setNext] = React.useState(`/${lang}/telegram/home`)
   const labels = copy[lang]
 
   React.useEffect(() => {
@@ -51,7 +51,7 @@ export function TelegramBootstrap({ lang }: { lang: Locale }) {
     const returnPath = launchParams.get("next")
     const target = requestedOrder && /^[a-zA-Z0-9_-]{1,128}$/.test(requestedOrder)
       ? `/${lang}/telegram/orders/${encodeURIComponent(requestedOrder)}${requestedComment && /^[a-zA-Z0-9_-]{1,128}$/.test(requestedComment) ? `?comment=${encodeURIComponent(requestedComment)}#order-comment-${encodeURIComponent(requestedComment)}` : ""}`
-      : returnPath?.startsWith(`/${lang}/telegram/`) && !returnPath.includes("\\") ? returnPath : `/${lang}/telegram/orders`
+      : returnPath?.startsWith(`/${lang}/telegram/`) && !returnPath.includes("\\") ? returnPath : `/${lang}/telegram/home`
     queueMicrotask(() => { if (!cancelled) setNext(target) })
 
     async function authenticate() {

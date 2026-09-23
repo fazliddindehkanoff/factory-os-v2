@@ -37,7 +37,7 @@ export async function GET(request: Request) {
     ? `${forwardedProtocol || requestUrl.protocol.slice(0, -1)}://${host}`
     : requestUrl.origin
   const destination = interfaceType === "web-app"
-    ? `/${locale}/telegram/orders`
+    ? `/${locale}/telegram/home`
     : `/${locale}/dashboard`
   const response = NextResponse.redirect(new URL(destination, origin))
   response.headers.set("Cache-Control", "no-store")

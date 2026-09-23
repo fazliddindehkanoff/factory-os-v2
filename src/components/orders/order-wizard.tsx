@@ -43,6 +43,7 @@ import { saveOrderAttachments, orderDraftStore } from "@/lib/order-attachments"
 import { truncateLabel, type OrderAttachment, type OrderRecord } from "@/lib/orders"
 import { PRODUCT_TITLE_MAX_LENGTH } from "@/lib/product-input"
 import { normalizeNumberDraft } from "@/lib/number-input"
+import { HeaderDecor } from "@/components/page-header"
 import { getLocalizedTitle, type Product } from "@/lib/settings"
 import { cn } from "@/lib/utils"
 
@@ -507,8 +508,9 @@ function OrderWizardForm({
 
   return (
     <div ref={formRef} className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
-      <div className="overflow-hidden rounded-2xl border bg-gradient-to-br from-card via-card to-muted/40 p-5 shadow-sm md:p-7">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+      <div className="relative overflow-hidden rounded-2xl border bg-card p-5 shadow-xs md:p-7">
+        <HeaderDecor />
+        <div className="relative flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
           <div>
             <p className="text-sm font-medium text-muted-foreground">{messages.orders}</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-3xl">

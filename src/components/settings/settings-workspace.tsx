@@ -2,16 +2,28 @@
 
 import * as React from "react"
 import {
+  BriefcaseIcon,
+  Building2Icon,
   DownloadIcon,
   LanguagesIcon,
   LoaderCircleIcon,
+  MapPinIcon,
+  PackageIcon,
   PlusIcon,
+  RulerIcon,
   SearchIcon,
+  ShieldCheckIcon,
+  TagsIcon,
+  TargetIcon,
   Trash2Icon,
   UploadIcon,
+  UsersIcon,
+  WarehouseIcon,
+  type LucideIcon,
 } from "lucide-react"
 
 import { AccessDenied } from "@/components/auth/access-denied"
+import { HeaderDecor } from "@/components/page-header"
 import { useAuthorization } from "@/components/auth/use-authorization"
 import { RolePermissionMatrix } from "@/components/settings/role-permission-matrix"
 import { SettingsList, type SettingsTableRow } from "@/components/settings/settings-list"
@@ -90,6 +102,7 @@ export function SettingsWorkspace({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [form, setForm] = React.useState<FormState>(createInitialForm(section))
   const sectionTitle = getSectionTitle(section, messages)
+  const SectionIcon = sectionIcons[section]
   const { canViewSettingsSection, canManageSettingsSection } = useAuthorization()
 
   const branchOptions = data.branches.map((item) => ({
@@ -507,13 +520,20 @@ export function SettingsWorkspace({
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 p-4 pt-0 md:p-6 md:pt-0">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{sectionTitle}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{messages.settingsDescription}</p>
+    <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-5 px-4 pb-10 md:px-6">
+      <header className="relative flex flex-col justify-between gap-4 overflow-hidden rounded-2xl border bg-card px-5 py-5 shadow-xs sm:flex-row sm:items-end md:px-6">
+        <HeaderDecor />
+        <div className="relative flex min-w-0 items-start gap-4">
+          <span className="hidden size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary sm:flex">
+            <SectionIcon className="size-6" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-muted-foreground">{messages.settings}</p>
+            <h1 className="mt-0.5 text-2xl font-semibold tracking-tight md:text-3xl">{sectionTitle}</h1>
+            <p className="mt-1.5 text-sm text-muted-foreground">{messages.settingsDescription}</p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="relative flex flex-wrap gap-2">
           {section === "products" ? (
             <>
               <Button
@@ -603,7 +623,7 @@ export function SettingsWorkspace({
           </DialogContent>
           </Dialog>
         </div>
-      </div>
+      </header>
 
       {section === "products" ? (
         <p className="text-sm text-muted-foreground">{messages.productImportHelp}</p>
@@ -1039,4 +1059,17 @@ function getRows(
     case "users":
       return data.users.map((item) => ({ id: item.id, cells: [item.fullName, item.username, findTitle(data.positions, item.positionId), joinTitles(data.departments, item.departmentIds), joinTitles(data.roles, item.roleIds), item.phoneNumber], searchText: `${item.fullName} ${item.username} ${item.phoneNumber}` }))
   }
+}
+
+const sectionIcons: Record<SettingsSection, LucideIcon> = {
+  positions: BriefcaseIcon,
+  products: PackageIcon,
+  "unit-types": RulerIcon,
+  "product-categories": TagsIcon,
+  "order-purposes": TargetIcon,
+  roles: ShieldCheckIcon,
+  warehouses: WarehouseIcon,
+  departments: Building2Icon,
+  users: UsersIcon,
+  branches: MapPinIcon,
 }

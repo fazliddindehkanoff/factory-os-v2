@@ -31,7 +31,7 @@ export function SettingsFilters({
   const hasFilters = Object.values(value).some(Boolean)
 
   return (
-    <div className="space-y-2 rounded-xl bg-muted/45 p-3">
+    <div className="space-y-2 rounded-2xl border bg-card p-3 shadow-xs md:p-4">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <FilterIcon className="size-4" />

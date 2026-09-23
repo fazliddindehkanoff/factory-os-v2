@@ -4,6 +4,7 @@ import * as React from "react"
 import { CameraIcon, KeyRoundIcon, LoaderCircleIcon, ShieldCheckIcon } from "lucide-react"
 
 import { useAuthorization } from "@/components/auth/use-authorization"
+import { PageHeader } from "@/components/page-header"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -94,8 +95,23 @@ export function ProfilePage({ lang, messages }: { lang: Locale; messages: Messag
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl gap-5 px-4 pb-8 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] md:px-6">
-      <Card className="h-fit">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 pb-10 md:px-6">
+    <PageHeader
+      leading={(
+        <Avatar className="size-16 shrink-0 text-xl ring-4 ring-primary/10">
+          <AvatarImage src={`/api/profile/photo?v=${avatarVersion}`} alt="" />
+          <AvatarFallback className="bg-primary/10 text-lg font-semibold text-primary">{initials}</AvatarFallback>
+        </Avatar>
+      )}
+      eyebrow={messages.profile}
+      title={currentUser?.fullName ?? messages.profile}
+      meta={<>
+        <span className="font-mono text-muted-foreground">@{currentUser?.username}</span>
+        {roles.map((role) => <span key={role.id} className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">{getLocalizedTitle(role, lang)}</span>)}
+      </>}
+    />
+    <div className="grid gap-5 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <Card className="h-fit rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CameraIcon className="size-4 text-primary" />
@@ -137,7 +153,7 @@ export function ProfilePage({ lang, messages }: { lang: Locale; messages: Messag
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ShieldCheckIcon className="size-4 text-primary" />
@@ -177,6 +193,7 @@ export function ProfilePage({ lang, messages }: { lang: Locale; messages: Messag
           </form>
         </CardContent>
       </Card>
+    </div>
     </div>
   )
 }

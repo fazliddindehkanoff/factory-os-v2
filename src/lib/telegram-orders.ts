@@ -1,4 +1,5 @@
 import { formatWorkflowNotification } from "@/lib/orders"
+import { buildFlowMap, buildMyQueue, currentStageEnteredAt, dailyTrend, dashboardAccess, lateOrders, placementMoney, procurementTeamIds, specialistLoad, workflowProgress } from "@/lib/dashboard-insights"
 import { canReadOrderWithSettings } from "@/lib/order-access"
 import { getSettingsData } from "@/lib/settings-data"
 import "server-only"
@@ -26,6 +27,7 @@ import {
   canViewParentOrderLink,
   getAssignedProcurementLineIds,
   getProcurementSuborderForSpecialist,
+  isOrderAssignedToProcurementSpecialist,
   isOrderWaitingForUser,
   isOperationalOrder,
   type OrderRecord,
@@ -66,6 +68,10 @@ export type TelegramOrderSummary = {
   createdAt: string
   itemCount: number
   waitingForMe: boolean
+  /** 0–1 share of the workflow already completed. */
+  progress: number
+  stageEnteredAt: string
+  productSummary: string
 }
 
 export type TelegramOrderDetail = TelegramOrderSummary & {
@@ -108,6 +114,9 @@ type VisibleOrderRow = {
   comment: string
   lines: OrderRecord["lines"]
   waitingForMe: boolean
+  progress: number
+  stageEnteredAt: string
+  productSummary: string
 }
 
 
@@ -197,12 +206,14 @@ async function getVisibleOrderRows(userId: string, lang: Locale, includeContaine
     .filter(({ order }) => includeContainers || isOperationalOrder(order))
     .filter(({ order }) => canReadOrderWithSettings(order, userId, settings))
 
-  const [userRows, departmentRows, warehouseRows, purposeRows] = await Promise.all([
+  const [userRows, departmentRows, warehouseRows, purposeRows, productRows] = await Promise.all([
     db.select({ id: users.id, title: users.fullName }).from(users),
     db.select({ id: departments.id, title: localized.department }).from(departments),
     db.select({ id: warehouses.id, title: localized.warehouse }).from(warehouses),
     db.select({ id: orderPurposes.id, title: localized.purpose }).from(orderPurposes),
+    db.select({ id: products.id, title: localized.product }).from(products),
   ])
+  const productNames = new Map(productRows.map((row) => [row.id, row.title]))
   const userNames = new Map(userRows.map((row) => [row.id, row.title]))
   const departmentNames = new Map(departmentRows.map((row) => [row.id, row.title]))
   const warehouseNames = new Map(warehouseRows.map((row) => [row.id, row.title]))
@@ -238,6 +249,11 @@ async function getVisibleOrderRows(userId: string, lang: Locale, includeContaine
     comment: order.comment,
     lines: visibleLines,
     waitingForMe: isOrderWaitingForUser(order, userId, settings.warehouses.find((item) => item.id === order.warehouseId)?.responsibleUserId),
+    progress: workflowProgress(order),
+    stageEnteredAt: currentStageEnteredAt(order),
+    productSummary: visibleLines.length
+      ? `${productNames.get(visibleLines[0].productId) ?? visibleLines[0].productId}${visibleLines.length > 1 ? ` +${visibleLines.length - 1}` : ""}`
+      : "",
   } satisfies VisibleOrderRow
   })
 }
@@ -260,6 +276,9 @@ export async function getTelegramOrders(userId: string, lang: Locale, waitingOnl
       createdAt: row.createdAt,
       itemCount: row.lines.length,
       waitingForMe: row.waitingForMe,
+      progress: row.progress,
+      stageEnteredAt: row.stageEnteredAt,
+      productSummary: row.productSummary,
     } satisfies TelegramOrderSummary))
     .filter((order) => !waitingOnly || order.waitingForMe)
 }
@@ -317,6 +336,9 @@ export async function getTelegramOrder(userId: string, orderId: string, lang: Lo
     createdAt: order.createdAt,
     itemCount: lines.length,
     waitingForMe: order.waitingForMe,
+    progress: order.progress,
+    stageEnteredAt: order.stageEnteredAt,
+    productSummary: order.productSummary,
     comment: order.comment,
     lines: lines.map((line) => ({ ...line, unit: line.unit ?? "" })),
     comments: comments.map((comment) => ({
@@ -373,3 +395,63 @@ export async function getMentionedOrderDiscussion(userId: string, orderId: strin
     comments: comments.map((comment) => ({ ...comment, replyToId: comment.replyToId ?? undefined })),
   }
 }
+
+/**
+ * Telegram home model: the same insights as the web dashboard, gated by the
+ * user's role permissions from the database.
+ */
+export async function getTelegramDashboard(userId: string, lang: Locale) {
+  const settings = await getSettingsData()
+  const user = settings.users.find((item) => item.id === userId)
+  const roles = settings.roles.filter((role) => user?.roleIds.includes(role.id))
+  const access = dashboardAccess(roles)
+  const now = Date.now()
+  const rows = access.orders
+    ? await db.select({ payload: appRecords.payload }).from(appRecords).where(eq(appRecords.namespace, "orders"))
+    : []
+  const orders = rows.map((row) => parseStoredOrder(row.payload))
+    .filter((order): order is OrderRecord => Boolean(order))
+    .filter(isOperationalOrder)
+    .filter((order) => canReadOrderWithSettings(order, userId, settings))
+  const warehouseResponsible = (warehouseId: string) => settings.warehouses.find((item) => item.id === warehouseId)?.responsibleUserId
+  const userName = (id: string) => settings.users.find((item) => item.id === id)?.fullName ?? id
+  const title = (item: { titleUz: string; titleRu: string; titleTr: string }) => lang === "ru" ? item.titleRu : lang === "tr" ? item.titleTr : item.titleUz
+  const summary = (order: OrderRecord) => {
+    const visible = access.team || !isOrderAssignedToProcurementSpecialist(order, userId)
+      ? order.lines
+      : order.lines.filter((line) => getAssignedProcurementLineIds(order, userId).includes(line.id))
+    const product = settings.products.find((item) => item.id === visible[0]?.productId)
+    const purpose = settings["order-purposes"].find((item) => item.id === order.purposeId)
+    const name = product ? title(product) : purpose ? title(purpose) : order.number
+    return visible.length > 1 ? `${name} +${visible.length - 1}` : name
+  }
+  const flow = buildFlowMap(orders, now, warehouseResponsible)
+  const activeIds = new Set(flow.stages.flatMap((stage) => stage.orderIds))
+  const late = lateOrders(orders, now)
+  return {
+    access,
+    roleNames: roles.map(title),
+    counts: {
+      active: activeIds.size,
+      late: late.length,
+      urgent: orders.filter((order) => activeIds.has(order.id) && ["urgent", "critical"].includes(order.urgency)).length,
+    },
+    queue: buildMyQueue(orders, userId, now, warehouseResponsible).map((item) => ({
+      id: item.order.id, number: getProcurementSuborderForSpecialist(item.order, userId)?.number ?? item.order.number,
+      summary: summary(item.order), step: item.step, ageDays: item.ageDays, overdue: item.overdue, urgency: item.order.urgency,
+    })),
+    flow: access.summary ? {
+      bottleneck: flow.bottleneck,
+      stages: flow.stages.map((stage) => ({
+        step: stage.step, orders: stage.orderIds.length, positions: stage.positions, avgDays: stage.avgDays,
+        holders: stage.holders.map((holder) => userName(holder.userId)),
+      })),
+    } : null,
+    trend: access.summary ? dailyTrend(orders, now) : null,
+    late: late.slice(0, 5).map(({ order, daysLate }) => ({ id: order.id, number: order.number, summary: summary(order), daysLate, urgency: order.urgency })),
+    team: access.team ? specialistLoad(orders, procurementTeamIds(settings.users, settings.roles), now).map((item) => ({ ...item, name: userName(item.userId) })) : null,
+    money: access.money ? placementMoney(orders, now) : null,
+  }
+}
+
+export type TelegramDashboard = Awaited<ReturnType<typeof getTelegramDashboard>>

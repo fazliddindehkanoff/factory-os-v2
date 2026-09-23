@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import { AccessDenied } from "@/components/auth/access-denied"
+import { PageHeader } from "@/components/page-header"
 import { useAuthorization } from "@/components/auth/use-authorization"
 import { useOrders } from "@/components/orders/orders-provider"
 import { useProcurement } from "@/components/procurement/procurement-provider"
@@ -264,31 +265,28 @@ export function ProcurementWorkspace({ lang, messages }: { lang: Locale; message
   const tableWidth = COLUMN_KEYS.reduce((total, key) => total + columnWidths[key], 0)
 
   return (
-    <div className="flex min-w-0 w-full flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{messages.procurement}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{copy.description}</p>
-      </div>
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-1 flex-col gap-5 px-4 pb-10 md:px-6">
+      <PageHeader icon={PackageSearchIcon} title={messages.procurement} description={copy.description} />
 
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-5" aria-label={copy.metricsLabel}>
         {statCards.map((stat) => {
           const Icon = stat.icon
           return (
-            <article key={stat.label} className="rounded-xl border bg-card p-3 shadow-xs transition-colors hover:border-foreground/20 hover:bg-muted/20 lg:p-4">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{stat.label}</p>
-                <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", stat.tone)}>
-                  <Icon className="size-4" aria-hidden="true" />
-                </span>
+            <article key={stat.label} className="flex min-w-0 items-start justify-between gap-3 rounded-2xl border bg-card px-4 py-3.5 shadow-xs">
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-muted-foreground">{stat.label}</p>
+                <p className="mt-1.5 font-mono text-2xl font-semibold tabular-nums tracking-tight md:text-3xl">{stat.value}</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">{stat.note}</p>
               </div>
-              <p className="mt-2 font-mono text-2xl font-semibold tabular-nums">{stat.value}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{stat.note}</p>
+              <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", stat.tone)}>
+                <Icon className="size-5" aria-hidden="true" />
+              </span>
             </article>
           )
         })}
       </section>
 
-      <section className="overflow-hidden rounded-xl border bg-card shadow-xs" aria-labelledby="procurement-register-title">
+      <section className="overflow-hidden rounded-2xl border bg-card shadow-xs" aria-labelledby="procurement-register-title">
         <div className="flex flex-col gap-3 border-b p-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
